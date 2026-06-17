@@ -1,0 +1,21 @@
+{
+  "name": "central-backend",
+  "version": "1.0.0",
+  "description": "Backend de CENTRAL — conecta WhatsApp Business API (Meta) con la webapp CENTRAL",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "axios": "^1.7.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "ws": "^8.17.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
