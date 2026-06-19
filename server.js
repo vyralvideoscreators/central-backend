@@ -91,12 +91,11 @@ async function getBrowser() {
 }
 
 // Convierte un fragmento de HTML (el ticket) en un PNG real
-async function renderHtmlToImage(htmlContent, ticketCss, maxWidth = 380) {
+async function renderHtmlToImage(htmlContent, ticketCss, width = 380) {
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
-    // Viewport ancho de sobra — el recorte final se ajusta al contenido real, no al viewport
-    await page.setViewport({ width: maxWidth, height: 100, deviceScaleFactor: 2 });
+    await page.setViewport({ width, height: 100, deviceScaleFactor: 2 }); // 2x para nitidez
 
     const fullHtml = `
       <!DOCTYPE html>
@@ -105,9 +104,8 @@ async function renderHtmlToImage(htmlContent, ticketCss, maxWidth = 380) {
         <meta charset="UTF-8">
         <style>
           * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, 'Segoe UI', Arial, sans-serif; }
-          html, body { background: transparent; }
-          /* El body se ajusta al contenido (display:inline-block), no a un ancho fijo */
-          body { display: inline-block; padding: 0; }
+          html, body { background: #ffffff; }
+          body { padding: 20px; width: ${width - 40}px; }
           /* ── CSS real de los tickets, enviado por CENTRAL ── */
           ${ticketCss || ''}
         </style>
@@ -117,20 +115,12 @@ async function renderHtmlToImage(htmlContent, ticketCss, maxWidth = 380) {
     `;
 
     await page.setContent(fullHtml, { waitUntil: 'networkidle0' });
-
-    // Medir el elemento REAL del ticket (su primer hijo directo), no el body completo,
-    // para recortar la imagen exactamente a su ancho y alto reales — sin franjas blancas.
-    const target = await page.evaluateHandle(() => document.body.firstElementChild || document.body);
-    const box = await target.asElement().boundingBox();
+    const bodyHandle = await page.$('body');
+    const box = await bodyHandle.boundingBox();
 
     const imageBuffer = await page.screenshot({
       type: 'png',
-      clip: {
-        x: Math.max(0, box.x),
-        y: Math.max(0, box.y),
-        width: Math.ceil(box.width),
-        height: Math.ceil(box.height),
-      },
+      clip: { x: 0, y: 0, width, height: Math.ceil(box.height) },
     });
 
     return imageBuffer;
