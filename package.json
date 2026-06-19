@@ -1,7 +1,7 @@
 {
   "name": "central-backend",
-  "version": "1.0.0",
-  "description": "Backend de CENTRAL — conecta WhatsApp Business API (Meta) con la webapp CENTRAL",
+  "version": "3.0.0",
+  "description": "Backend de CENTRAL — WhatsApp Business API con soporte de archivos y envío de tickets de pedido como imagen",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
@@ -13,9 +13,13 @@
     "axios": "^1.7.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "ws": "^8.17.0"
+    "ws": "^8.17.0",
+    "multer": "^1.4.5-lts.1",
+    "form-data": "^4.0.0",
+    "puppeteer": "^22.12.1"
   },
   "engines": {
     "node": ">=18.0.0"
   }
 }
+
