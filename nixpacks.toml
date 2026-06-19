@@ -1,0 +1,15 @@
+providers = ["node"]
+
+[phases.setup]
+nixPkgs = [
+  "...",
+  "chromium",
+  "nss",
+  "freetype",
+  "harfbuzz",
+  "ca-certificates",
+  "fontconfig"
+]
+
+[start]
+cmd = "node server.js"
