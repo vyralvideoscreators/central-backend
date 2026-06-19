@@ -91,7 +91,7 @@ async function getBrowser() {
 }
 
 // Convierte un fragmento de HTML (el ticket) en un PNG real
-async function renderHtmlToImage(htmlContent, width = 380) {
+async function renderHtmlToImage(htmlContent, ticketCss, width = 380) {
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
@@ -104,7 +104,10 @@ async function renderHtmlToImage(htmlContent, width = 380) {
         <meta charset="UTF-8">
         <style>
           * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, 'Segoe UI', Arial, sans-serif; }
-          body { background: #ffffff; padding: 20px; width: ${width - 40}px; }
+          html, body { background: #ffffff; }
+          body { padding: 20px; width: ${width - 40}px; }
+          /* ── CSS real de los tickets, enviado por CENTRAL ── */
+          ${ticketCss || ''}
         </style>
       </head>
       <body>${htmlContent}</body>
@@ -343,15 +346,15 @@ app.post('/api/send-media', upload.single('file'), async (req, res) => {
 // en imagen real y la envía por WhatsApp como una imagen normal.
 // ══════════════════════════════════════════════════════════════
 app.post('/api/send-ticket', async (req, res) => {
-  const { waId, ticketHtml, caption, orderType } = req.body;
+  const { waId, ticketHtml, ticketCss, caption, orderType } = req.body;
   // orderType: 'presupuesto' | 'confirmacion' — solo informativo para logs
 
   if (!waId || !ticketHtml) return res.status(400).json({ error: 'Faltan waId o ticketHtml' });
   if (!PHONE_NUMBER_ID || !WHATSAPP_TOKEN) return res.status(500).json({ error: 'Backend no configurado' });
 
   try {
-    // 1) Renderizar el HTML del ticket como imagen PNG
-    const imageBuffer = await renderHtmlToImage(ticketHtml);
+    // 1) Renderizar el HTML del ticket como imagen PNG, con el CSS real de CENTRAL
+    const imageBuffer = await renderHtmlToImage(ticketHtml, ticketCss);
 
     // 2) Subir esa imagen a Meta
     const mediaId = await uploadMediaToMeta(imageBuffer, 'image/png', `ticket_${Date.now()}.png`);
