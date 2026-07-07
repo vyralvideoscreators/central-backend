@@ -488,6 +488,30 @@ app.get('/', (req, res) => {
 
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
+app.get('/privacy', (req, res) => {
+  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Política de Privacidad — CENTRAL</title>
+  <style>body{font-family:Arial,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.6;}h1{color:#333;}h2{color:#555;margin-top:30px;}</style></head>
+  <body>
+  <h1>Política de Privacidad de CENTRAL</h1>
+  <p><strong>Última actualización:</strong> ${new Date().toLocaleDateString('es-ES')}</p>
+  <h2>1. Información que recopilamos</h2>
+  <p>CENTRAL recopila mensajes de WhatsApp e Instagram Business con el único propósito de facilitar la gestión de comunicaciones comerciales entre empresas y sus clientes.</p>
+  <h2>2. Uso de la información</h2>
+  <p>La información recopilada se usa exclusivamente para mostrar y gestionar conversaciones dentro de la plataforma CENTRAL. No se comparte con terceros.</p>
+  <h2>3. Almacenamiento</h2>
+  <p>Los datos se almacenan de forma segura y temporal en servidores protegidos. No se conservan más tiempo del necesario para la prestación del servicio.</p>
+  <h2>4. Derechos del usuario</h2>
+  <p>Los usuarios pueden solicitar la eliminación de sus datos en cualquier momento contactando a: vyralvideos.creators@gmail.com</p>
+  <h2>5. Contacto</h2>
+  <p>Para cualquier consulta sobre privacidad: <a href="mailto:vyralvideos.creators@gmail.com">vyralvideos.creators@gmail.com</a></p>
+  </body></html>`);
+});
+
+app.get('/auth/instagram/deauth', (req, res) => res.sendStatus(200));
+app.get('/auth/instagram/delete', (req, res) => res.sendStatus(200));
+app.post('/auth/instagram/deauth', (req, res) => res.sendStatus(200));
+app.post('/auth/instagram/delete', (req, res) => res.sendStatus(200));
+
 // ── Cierre limpio del navegador headless al apagar el server ───
 process.on('SIGTERM', async () => {
   if (browserInstance) await browserInstance.close();
