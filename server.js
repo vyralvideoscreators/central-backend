@@ -1,7 +1,6 @@
 // ══════════════════════════════════════════════════════════════
-// CENTRAL BACKEND — Conecta WhatsApp Business API (Meta) con CENTRAL
-// v3 — soporte de archivos (imágenes/docs/audio) + envío de tickets
-//      de presupuesto/pedido como imagen real por WhatsApp
+// CENTRAL BACKEND — Conecta WhatsApp Business API + Instagram (Meta)
+// v4 — soporte WhatsApp + Instagram DMs + archivos + tickets
 // ══════════════════════════════════════════════════════════════
 require('dotenv').config();
 const express = require('express');
@@ -23,6 +22,10 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || 'central_webhook_secreto_123';
 const GRAPH_API_VERSION = 'v21.0';
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
+
+// ── Instagram ─────────────────────────────────────────────────
+const INSTAGRAM_ACCESS_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN;
+const INSTAGRAM_ACCOUNT_ID   = process.env.INSTAGRAM_ACCOUNT_ID || '17841426682340000';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
@@ -91,7 +94,7 @@ async function getBrowser() {
 }
 
 // Convierte un fragmento de HTML (el ticket) en un PNG real
-async function renderHtmlToImage(htmlContent, ticketCss, width = 380) {
+async function renderHtmlToImage(htmlContent, width = 380) {
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
@@ -104,10 +107,7 @@ async function renderHtmlToImage(htmlContent, ticketCss, width = 380) {
         <meta charset="UTF-8">
         <style>
           * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, 'Segoe UI', Arial, sans-serif; }
-          html, body { background: #ffffff; }
-          body { padding: 20px; width: ${width - 40}px; }
-          /* ── CSS real de los tickets, enviado por CENTRAL ── */
-          ${ticketCss || ''}
+          body { background: #ffffff; padding: 20px; width: ${width - 40}px; }
         </style>
       </head>
       <body>${htmlContent}</body>
@@ -200,11 +200,69 @@ app.get('/webhook', (req, res) => {
   return res.sendStatus(403);
 });
 
+// ══════════════════════════════════════════════════════════════
+// WEBHOOK — Instagram DMs entrantes
+// ══════════════════════════════════════════════════════════════
+async function handleInstagramWebhook(body) {
+  try {
+    const entry = body.entry?.[0];
+    const messaging = entry?.messaging?.[0];
+    if (!messaging) return;
+
+    const senderId = messaging.sender?.id;
+    if (!senderId || senderId === INSTAGRAM_ACCOUNT_ID) return; // ignorar eco de mensajes propios
+
+    const msgData = messaging.message;
+    if (!msgData) return;
+
+    // Obtener nombre del usuario via Graph API
+    let senderName = senderId;
+    try {
+      const profileRes = await axios.get(
+        `https://graph.instagram.com/${GRAPH_API_VERSION}/${senderId}`,
+        { params: { fields: 'name,username', access_token: INSTAGRAM_ACCESS_TOKEN } }
+      );
+      senderName = profileRes.data.name || profileRes.data.username || senderId;
+    } catch (_) {}
+
+    const convoKey = `ig_${senderId}`;
+    if (!conversations[convoKey]) {
+      conversations[convoKey] = {
+        waId: convoKey, name: senderName, messages: [],
+        lastMessageAt: null, platform: 'ig', igSenderId: senderId,
+      };
+    }
+    const convo = conversations[convoKey];
+
+    const newMessage = {
+      id: msgData.mid || 'ig_' + Date.now(),
+      role: 'in',
+      type: msgData.attachments ? 'image' : 'text',
+      text: msgData.text || (msgData.attachments ? '[Archivo adjunto]' : '[Mensaje vacío]'),
+      time: new Date().toISOString(),
+    };
+
+    convo.messages.push(newMessage);
+    convo.lastMessageAt = newMessage.time;
+    console.log(`📸 Instagram DM de ${senderName} (${senderId}): ${newMessage.text}`);
+    broadcast({ type: 'new_message', waId: convoKey, name: senderName, platform: 'ig', message: newMessage });
+  } catch (err) {
+    console.error('Error procesando webhook de Instagram:', err.message);
+  }
+}
+
 app.post('/webhook', async (req, res) => {
   res.sendStatus(200); // responder rápido, procesar después
 
   try {
     const body = req.body;
+
+    // ── Instagram ──────────────────────────────────────────────
+    if (body.object === 'instagram') {
+      await handleInstagramWebhook(body);
+      return;
+    }
+
     if (body.object !== 'whatsapp_business_account') return;
 
     const entry = body.entry?.[0];
@@ -346,15 +404,15 @@ app.post('/api/send-media', upload.single('file'), async (req, res) => {
 // en imagen real y la envía por WhatsApp como una imagen normal.
 // ══════════════════════════════════════════════════════════════
 app.post('/api/send-ticket', async (req, res) => {
-  const { waId, ticketHtml, ticketCss, caption, orderType } = req.body;
+  const { waId, ticketHtml, caption, orderType } = req.body;
   // orderType: 'presupuesto' | 'confirmacion' — solo informativo para logs
 
   if (!waId || !ticketHtml) return res.status(400).json({ error: 'Faltan waId o ticketHtml' });
   if (!PHONE_NUMBER_ID || !WHATSAPP_TOKEN) return res.status(500).json({ error: 'Backend no configurado' });
 
   try {
-    // 1) Renderizar el HTML del ticket como imagen PNG, con el CSS real de CENTRAL
-    const imageBuffer = await renderHtmlToImage(ticketHtml, ticketCss);
+    // 1) Renderizar el HTML del ticket como imagen PNG
+    const imageBuffer = await renderHtmlToImage(ticketHtml);
 
     // 2) Subir esa imagen a Meta
     const mediaId = await uploadMediaToMeta(imageBuffer, 'image/png', `ticket_${Date.now()}.png`);
@@ -386,13 +444,43 @@ app.post('/api/send-ticket', async (req, res) => {
   }
 });
 
+// ── Enviar mensaje de texto por Instagram ─────────────────────
+app.post('/api/send-instagram', async (req, res) => {
+  const { igSenderId, text } = req.body;
+  if (!igSenderId || !text) return res.status(400).json({ error: 'Faltan igSenderId o text' });
+  if (!INSTAGRAM_ACCESS_TOKEN) return res.status(500).json({ error: 'INSTAGRAM_ACCESS_TOKEN no configurado' });
+
+  try {
+    const response = await axios.post(
+      `https://graph.instagram.com/${GRAPH_API_VERSION}/me/messages`,
+      { recipient: { id: igSenderId }, message: { text } },
+      { headers: { Authorization: `Bearer ${INSTAGRAM_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } }
+    );
+
+    const convoKey = `ig_${igSenderId}`;
+    const convo = conversations[convoKey] || (conversations[convoKey] = { waId: convoKey, name: igSenderId, messages: [], lastMessageAt: null, platform: 'ig', igSenderId });
+    const sentMessage = {
+      id: response.data.message_id || 'ig_out_' + Date.now(),
+      role: 'out', type: 'text', text, time: new Date().toISOString(),
+    };
+    convo.messages.push(sentMessage);
+    convo.lastMessageAt = sentMessage.time;
+    broadcast({ type: 'message_sent', waId: convoKey, platform: 'ig', message: sentMessage });
+    res.json({ success: true, message: sentMessage });
+  } catch (err) {
+    console.error('Error enviando Instagram DM:', err.response?.data || err.message);
+    res.status(500).json({ error: 'Error al enviar mensaje de Instagram', details: err.response?.data || err.message });
+  }
+});
+
 // ── Health check ──────────────────────────────────────────────
 app.get('/', (req, res) => {
   res.json({
     status: 'ok',
     service: 'CENTRAL Backend',
-    version: '3.0 — archivos + tickets de pedido',
+    version: '4.0 — WhatsApp + Instagram + archivos + tickets',
     whatsapp_configured: !!(PHONE_NUMBER_ID && WHATSAPP_TOKEN),
+    instagram_configured: !!INSTAGRAM_ACCESS_TOKEN,
     conversations_count: Object.keys(conversations).length,
     media_cached: Object.keys(mediaCache).length,
   });
