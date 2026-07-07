@@ -9,17 +9,17 @@
     "dev": "node server.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
     "axios": "^1.7.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "ws": "^8.17.0",
-    "multer": "^1.4.5-lts.1",
+    "express": "^4.19.2",
     "form-data": "^4.0.0",
-    "puppeteer": "^22.12.1"
+    "multer": "^1.4.5-lts.1",
+    "pg": "^8.22.0",
+    "puppeteer": "^22.12.1",
+    "ws": "^8.17.0"
   },
   "engines": {
     "node": ">=18.0.0"
   }
 }
-
