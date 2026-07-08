@@ -11,6 +11,7 @@ const { WebSocketServer } = require('ws');
 const multer = require('multer');
 const FormData = require('form-data');
 const puppeteer = require('puppeteer');
+const db = require('./db');
 
 const app = express();
 app.use(cors());
@@ -29,16 +30,12 @@ const INSTAGRAM_ACCOUNT_ID   = process.env.INSTAGRAM_ACCOUNT_ID || '178414266823
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
-// ── In-memory store (pendiente migrar a DB persistente) ───────
-const conversations = {};
+// ── mediaCache sigue en memoria: solo son binarios de archivos ya
+// enviados/recibidos, no se persisten (los metadatos sí viven en la tabla messages) ──
 const mediaCache = {}; // { mediaId: { buffer, mimeType, size } }
 
-function getOrCreateConvo(waId, name) {
-  if (!conversations[waId]) {
-    conversations[waId] = { waId, name: name || waId, messages: [], lastMessageAt: null };
-  }
-  return conversations[waId];
-}
+// getOrCreateConvo/guardado de mensajes viven ahora en db.js (PostgreSQL)
+const { getOrCreateConvo } = db;
 
 // ── WebSocket ───────────────────────────────────────────────
 const server = http.createServer(app);
@@ -49,9 +46,12 @@ function broadcast(data) {
   wss.clients.forEach(client => { if (client.readyState === 1) client.send(payload); });
 }
 
-wss.on('connection', (ws) => {
+wss.on('connection', async (ws) => {
   console.log('🔌 Cliente CENTRAL conectado via WebSocket');
-  ws.send(JSON.stringify({ type: 'init', conversations }));
+  const convos = await db.getAllConversations();
+  const conversationsMap = {};
+  for (const convo of convos) conversationsMap[convo.waId] = convo;
+  ws.send(JSON.stringify({ type: 'init', conversations: conversationsMap }));
   ws.on('close', () => console.log('🔌 Cliente CENTRAL desconectado'));
 });
 
@@ -226,13 +226,7 @@ async function handleInstagramWebhook(body) {
     } catch (_) {}
 
     const convoKey = `ig_${senderId}`;
-    if (!conversations[convoKey]) {
-      conversations[convoKey] = {
-        waId: convoKey, name: senderName, messages: [],
-        lastMessageAt: null, platform: 'ig', igSenderId: senderId,
-      };
-    }
-    const convo = conversations[convoKey];
+    await getOrCreateConvo(convoKey, senderName, { platform: 'ig', igSenderId: senderId, updateName: true });
 
     const newMessage = {
       id: msgData.mid || 'ig_' + Date.now(),
@@ -242,8 +236,7 @@ async function handleInstagramWebhook(body) {
       time: new Date().toISOString(),
     };
 
-    convo.messages.push(newMessage);
-    convo.lastMessageAt = newMessage.time;
+    await db.saveMessage(convoKey, newMessage);
     console.log(`📸 Instagram DM de ${senderName} (${senderId}): ${newMessage.text}`);
     broadcast({ type: 'new_message', waId: convoKey, name: senderName, platform: 'ig', message: newMessage });
   } catch (err) {
@@ -283,7 +276,7 @@ app.post('/webhook', async (req, res) => {
     for (const msg of messages) {
       const waId = msg.from;
       const contactName = value.contacts?.[0]?.profile?.name || waId;
-      const convo = getOrCreateConvo(waId, contactName);
+      await getOrCreateConvo(waId, contactName, { updateName: true });
 
       let newMessage = { id: msg.id, role: 'in', time: new Date(parseInt(msg.timestamp) * 1000).toISOString() };
 
@@ -305,8 +298,7 @@ app.post('/webhook', async (req, res) => {
         newMessage.text = `[Mensaje tipo no soportado: ${msg.type}]`;
       }
 
-      convo.messages.push(newMessage);
-      convo.lastMessageAt = newMessage.time;
+      await db.saveMessage(waId, newMessage);
       console.log(`📩 Mensaje de ${contactName} (${waId}): ${newMessage.type}`);
       broadcast({ type: 'new_message', waId, name: contactName, message: newMessage });
     }
@@ -319,12 +311,25 @@ app.post('/webhook', async (req, res) => {
 // API — endpoints generales
 // ══════════════════════════════════════════════════════════════
 
-app.get('/api/conversations', (req, res) => res.json(Object.values(conversations)));
+app.get('/api/conversations', async (req, res) => {
+  try {
+    const convos = await db.getAllConversations();
+    res.json(convos);
+  } catch (err) {
+    console.error('Error leyendo conversaciones:', err.message);
+    res.status(500).json({ error: 'Error al leer conversaciones' });
+  }
+});
 
-app.get('/api/conversations/:waId', (req, res) => {
-  const convo = conversations[req.params.waId];
-  if (!convo) return res.status(404).json({ error: 'Conversación no encontrada' });
-  res.json(convo);
+app.get('/api/conversations/:waId', async (req, res) => {
+  try {
+    const convo = await db.getConversation(req.params.waId);
+    if (!convo) return res.status(404).json({ error: 'Conversación no encontrada' });
+    res.json(convo);
+  } catch (err) {
+    console.error('Error leyendo conversación:', err.message);
+    res.status(500).json({ error: 'Error al leer la conversación' });
+  }
 });
 
 app.get('/api/media/:mediaId', async (req, res) => {
@@ -352,13 +357,12 @@ app.post('/api/send', async (req, res) => {
       { messaging_product: 'whatsapp', to: waId, type: 'text', text: { body: text } },
       { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } }
     );
-    const convo = getOrCreateConvo(waId);
+    await getOrCreateConvo(waId);
     const sentMessage = {
       id: response.data.messages?.[0]?.id || 'local_' + Date.now(),
       role: 'out', type: 'text', text, time: new Date().toISOString(),
     };
-    convo.messages.push(sentMessage);
-    convo.lastMessageAt = sentMessage.time;
+    await db.saveMessage(waId, sentMessage);
     broadcast({ type: 'message_sent', waId, message: sentMessage });
     res.json({ success: true, message: sentMessage });
   } catch (err) {
@@ -381,15 +385,14 @@ app.post('/api/send-media', upload.single('file'), async (req, res) => {
 
     mediaCache[mediaId] = { buffer: file.buffer, mimeType: file.mimetype, size: file.size };
 
-    const convo = getOrCreateConvo(waId);
+    await getOrCreateConvo(waId);
     const sentMessage = {
       id: result.messages?.[0]?.id || 'local_' + Date.now(),
       role: 'out', type: waType, mediaId, mimeType: file.mimetype,
       filename: file.originalname, caption: caption || '',
       mediaUrl: `/api/media/${mediaId}`, time: new Date().toISOString(),
     };
-    convo.messages.push(sentMessage);
-    convo.lastMessageAt = sentMessage.time;
+    await db.saveMessage(waId, sentMessage);
     broadcast({ type: 'message_sent', waId, message: sentMessage });
     res.json({ success: true, message: sentMessage });
   } catch (err) {
@@ -423,7 +426,7 @@ app.post('/api/send-ticket', async (req, res) => {
     // 4) Guardar en el historial del backend
     mediaCache[mediaId] = { buffer: imageBuffer, mimeType: 'image/png', size: imageBuffer.length };
 
-    const convo = getOrCreateConvo(waId);
+    await getOrCreateConvo(waId);
     const sentMessage = {
       id: result.messages?.[0]?.id || 'local_' + Date.now(),
       role: 'out', type: 'image', mediaId, mimeType: 'image/png',
@@ -431,8 +434,7 @@ app.post('/api/send-ticket', async (req, res) => {
       orderType: orderType || null,
       time: new Date().toISOString(),
     };
-    convo.messages.push(sentMessage);
-    convo.lastMessageAt = sentMessage.time;
+    await db.saveMessage(waId, sentMessage);
 
     broadcast({ type: 'message_sent', waId, message: sentMessage });
 
@@ -458,13 +460,12 @@ app.post('/api/send-instagram', async (req, res) => {
     );
 
     const convoKey = `ig_${igSenderId}`;
-    const convo = conversations[convoKey] || (conversations[convoKey] = { waId: convoKey, name: igSenderId, messages: [], lastMessageAt: null, platform: 'ig', igSenderId });
+    await getOrCreateConvo(convoKey, igSenderId, { platform: 'ig', igSenderId });
     const sentMessage = {
       id: response.data.message_id || 'ig_out_' + Date.now(),
       role: 'out', type: 'text', text, time: new Date().toISOString(),
     };
-    convo.messages.push(sentMessage);
-    convo.lastMessageAt = sentMessage.time;
+    await db.saveMessage(convoKey, sentMessage);
     broadcast({ type: 'message_sent', waId: convoKey, platform: 'ig', message: sentMessage });
     res.json({ success: true, message: sentMessage });
   } catch (err) {
@@ -474,14 +475,15 @@ app.post('/api/send-instagram', async (req, res) => {
 });
 
 // ── Health check ──────────────────────────────────────────────
-app.get('/', (req, res) => {
+app.get('/', async (req, res) => {
   res.json({
     status: 'ok',
     service: 'CENTRAL Backend',
     version: '4.0 — WhatsApp + Instagram + archivos + tickets',
     whatsapp_configured: !!(PHONE_NUMBER_ID && WHATSAPP_TOKEN),
     instagram_configured: !!INSTAGRAM_ACCESS_TOKEN,
-    conversations_count: Object.keys(conversations).length,
+    database_configured: db.isReady(),
+    conversations_count: await db.countConversations(),
     media_cached: Object.keys(mediaCache).length,
   });
 });
@@ -519,6 +521,8 @@ process.on('SIGTERM', async () => {
 });
 
 // ══════════════════════════════════════════════════════════════
+// El servidor arranca siempre, incluso si PostgreSQL no está disponible:
+// initDb() nunca lanza (rechaza) errores, solo deja dbReady=false y loguea un warning.
 server.listen(PORT, () => {
   console.log(`\n🚀 CENTRAL Backend v3 corriendo en puerto ${PORT}`);
   console.log(`📡 Webhook URL para Meta: https://<tu-dominio>/webhook`);
@@ -527,4 +531,8 @@ server.listen(PORT, () => {
   console.log(`📎 Soporte de archivos: imágenes, documentos, audio, video`);
   console.log(`🧾 Soporte de tickets de pedido (HTML → imagen → WhatsApp)`);
   console.log(`🔌 WebSocket disponible en /ws\n`);
+});
+
+db.initDb().catch((err) => {
+  console.warn('⚠️  Error inesperado inicializando la base de datos:', err.message);
 });
