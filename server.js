@@ -920,6 +920,168 @@ app.get('/privacy', (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════
+// ADMIN — middleware y endpoints de superadmin
+// ══════════════════════════════════════════════════════════════
+
+const ADMIN_EMAIL    = process.env.ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+
+function requireAdmin(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No autenticado' });
+  }
+  try {
+    const decoded = jwt.verify(auth.slice(7), JWT_SECRET);
+    if (decoded.role !== 'superadmin') return res.status(403).json({ error: 'Acceso denegado' });
+    req.admin = decoded;
+    next();
+  } catch {
+    res.status(401).json({ error: 'Token inválido o expirado' });
+  }
+}
+
+app.post('/api/admin/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+    return res.status(503).json({ error: 'Panel de admin no configurado — define ADMIN_EMAIL y ADMIN_PASSWORD en Railway' });
+  }
+  if (!email || !password) return res.status(400).json({ error: 'Completa todos los campos' });
+  if (email !== ADMIN_EMAIL || password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Credenciales incorrectas' });
+  }
+  const token = jwt.sign({ role: 'superadmin', email }, JWT_SECRET, { expiresIn: '8h' });
+  res.json({ success: true, token });
+});
+
+app.get('/api/admin/stats', requireAdmin, async (req, res) => {
+  if (!dbReady) return res.status(503).json({ error: 'Base de datos no disponible' });
+  try {
+    const [totals, byPlan, newThisWeek, convos, msgs] = await Promise.all([
+      pool.query(`SELECT COUNT(*) total, COUNT(*) FILTER (WHERE active) activos, COUNT(*) FILTER (WHERE NOT active) suspendidos FROM tenants`),
+      pool.query(`SELECT plan, COUNT(*) count FROM tenants GROUP BY plan`),
+      pool.query(`SELECT COUNT(*) count FROM tenants WHERE created_at >= NOW() - INTERVAL '7 days'`),
+      pool.query(`SELECT COUNT(*) count FROM conversations`),
+      pool.query(`SELECT COUNT(*) count FROM messages`),
+    ]);
+    const planMap = {};
+    byPlan.rows.forEach(r => { planMap[r.plan] = parseInt(r.count); });
+    res.json({
+      total:         parseInt(totals.rows[0].total),
+      activos:       parseInt(totals.rows[0].activos),
+      suspendidos:   parseInt(totals.rows[0].suspendidos),
+      porPlan:       planMap,
+      nuevosEstaSemana: parseInt(newThisWeek.rows[0].count),
+      totalConversaciones: parseInt(convos.rows[0].count),
+      totalMensajes:       parseInt(msgs.rows[0].count),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/tenants', requireAdmin, async (req, res) => {
+  if (!dbReady) return res.status(503).json({ error: 'Base de datos no disponible' });
+  const { search = '', plan = '', status = '', page = 1, limit = 20 } = req.query;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+  try {
+    const conditions = [];
+    const params     = [];
+    if (search) { params.push(`%${search}%`); conditions.push(`(business_name ILIKE $${params.length} OR email ILIKE $${params.length})`); }
+    if (plan)   { params.push(plan);   conditions.push(`plan = $${params.length}`); }
+    if (status === 'active')    conditions.push(`active = true`);
+    if (status === 'suspended') conditions.push(`active = false`);
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+
+    const countRes = await pool.query(`SELECT COUNT(*) count FROM tenants ${where}`, params);
+    params.push(parseInt(limit), offset);
+    const dataRes  = await pool.query(`
+      SELECT
+        t.id, t.business_name, t.full_name, t.email, t.plan, t.country,
+        t.whatsapp_number, t.active, t.created_at,
+        CASE WHEN t.whatsapp_phone_number_id IS NOT NULL THEN true ELSE false END AS whatsapp_connected,
+        CASE WHEN t.whatsapp_phone_number_id IS NOT NULL
+          THEN repeat('*', GREATEST(0, length(t.whatsapp_phone_number_id)-4)) || right(t.whatsapp_phone_number_id,4)
+          ELSE NULL END AS whatsapp_phone_id_masked,
+        (SELECT COUNT(*) FROM conversations c WHERE c.tenant_id = t.id) AS total_convos,
+        (SELECT COUNT(*) FROM messages m WHERE m.tenant_id = t.id) AS total_msgs
+      FROM tenants t
+      ${where}
+      ORDER BY t.created_at DESC
+      LIMIT $${params.length - 1} OFFSET $${params.length}
+    `, params);
+
+    res.json({
+      total: parseInt(countRes.rows[0].count),
+      page:  parseInt(page),
+      limit: parseInt(limit),
+      tenants: dataRes.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/tenants/:tenantId', requireAdmin, async (req, res) => {
+  if (!dbReady) return res.status(503).json({ error: 'Base de datos no disponible' });
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        t.id, t.business_name, t.full_name, t.email, t.plan, t.country,
+        t.whatsapp_number, t.active, t.created_at, t.instagram_account_id,
+        CASE WHEN t.whatsapp_phone_number_id IS NOT NULL THEN true ELSE false END AS whatsapp_connected,
+        CASE WHEN t.whatsapp_phone_number_id IS NOT NULL
+          THEN repeat('*', GREATEST(0, length(t.whatsapp_phone_number_id)-4)) || right(t.whatsapp_phone_number_id,4)
+          ELSE NULL END AS whatsapp_phone_id_masked,
+        (SELECT COUNT(*) FROM conversations c WHERE c.tenant_id = t.id) AS total_convos,
+        (SELECT COUNT(*) FROM messages m WHERE m.tenant_id = t.id) AS total_msgs
+      FROM tenants t WHERE t.id = $1
+    `, [req.params.tenantId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Tenant no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/admin/tenants/:tenantId/plan', requireAdmin, async (req, res) => {
+  const { plan } = req.body;
+  if (!['basic','pro','business'].includes(plan)) return res.status(400).json({ error: 'Plan inválido' });
+  if (!dbReady) return res.status(503).json({ error: 'Base de datos no disponible' });
+  try {
+    await pool.query('UPDATE tenants SET plan = $1 WHERE id = $2', [plan, req.params.tenantId]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/admin/tenants/:tenantId/status', requireAdmin, async (req, res) => {
+  const { active } = req.body;
+  if (typeof active !== 'boolean') return res.status(400).json({ error: 'active debe ser true o false' });
+  if (!dbReady) return res.status(503).json({ error: 'Base de datos no disponible' });
+  try {
+    await pool.query('UPDATE tenants SET active = $1 WHERE id = $2', [active, req.params.tenantId]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/tenants/:tenantId', requireAdmin, async (req, res) => {
+  if (req.headers['x-confirm-delete'] !== 'true') {
+    return res.status(400).json({ error: 'Falta header X-Confirm-Delete: true' });
+  }
+  if (!dbReady) return res.status(503).json({ error: 'Base de datos no disponible' });
+  try {
+    await pool.query('DELETE FROM tenants WHERE id = $1', [req.params.tenantId]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════
 // ARRANQUE
 // ══════════════════════════════════════════════════════════════
 initDB().then(() => {
