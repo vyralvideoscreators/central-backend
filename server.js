@@ -59,9 +59,12 @@ async function initDB() {
       CREATE TABLE IF NOT EXISTS tenants (
         id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         business_name             TEXT NOT NULL,
+        full_name                 TEXT,
         email                     TEXT UNIQUE NOT NULL,
         password_hash             TEXT NOT NULL,
         plan                      TEXT DEFAULT 'basic',
+        country                   TEXT,
+        whatsapp_number           TEXT,
         whatsapp_phone_number_id  TEXT,
         whatsapp_token            TEXT,
         instagram_access_token    TEXT,
@@ -133,6 +136,7 @@ async function seedDefaultTenant() {
   await pool.query(`
     INSERT INTO tenants (business_name, email, password_hash, plan, whatsapp_phone_number_id, whatsapp_token, instagram_access_token, instagram_account_id)
     VALUES ($1, $2, $3, 'basic', $4, $5, $6, $7)
+    ON CONFLICT (email) DO NOTHING
   `, ['Mi Negocio', email, hash, DEFAULT_PHONE_ID || null, DEFAULT_WA_TOKEN || null, DEFAULT_IG_TOKEN || null, DEFAULT_IG_ACCT || null]);
   console.log(`✅ Tenant por defecto creado: ${email}`);
 }
@@ -151,7 +155,7 @@ async function dbGetOrCreateConvo(waId, name, tenantId, platform = 'wa', igSende
 }
 
 async function dbSaveMessage(msg, waId, tenantId) {
-  if (!dbReady) return;
+  if (!dbReady || !tenantId) return;
   await pool.query(`
     INSERT INTO messages (id, wa_id, tenant_id, role, type, text, media_id, mime_type, media_url, caption, filename, order_type, time)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -550,41 +554,56 @@ app.post('/webhook', async (req, res) => {
 // ══════════════════════════════════════════════════════════════
 
 app.post('/api/tenant/register', async (req, res) => {
-  const { businessName, email, password, plan } = req.body;
+  const { businessName, fullName, email, password, country, whatsappNumber, plan } = req.body;
   if (!businessName || !email || !password) {
-    return res.status(400).json({ error: 'Faltan businessName, email o password' });
+    return res.status(400).json({ error: 'Faltan campos obligatorios', field: 'businessName' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'Correo electrónico inválido', field: 'email' });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres', field: 'password' });
   }
   if (!dbReady) return res.status(503).json({ error: 'Base de datos no disponible' });
 
   try {
     const hash = await bcrypt.hash(password, 10);
     const { rows } = await pool.query(`
-      INSERT INTO tenants (business_name, email, password_hash, plan)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, business_name, email, plan, created_at
-    `, [businessName, email, hash, plan || 'basic']);
+      INSERT INTO tenants (business_name, full_name, email, password_hash, plan, country, whatsapp_number)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING id, business_name, full_name, email, plan, country, created_at
+    `, [businessName, fullName || null, email, hash, plan || 'basic', country || null, whatsappNumber || null]);
     const tenant = rows[0];
     const token  = jwt.sign({ tenantId: tenant.id, email: tenant.email }, JWT_SECRET, { expiresIn: '30d' });
-    res.json({ success: true, token, tenant });
+    res.json({
+      success: true,
+      token,
+      tenant: { id: tenant.id, businessName: tenant.business_name, fullName: tenant.full_name, email: tenant.email, plan: tenant.plan, country: tenant.country },
+    });
   } catch (err) {
-    if (err.code === '23505') return res.status(409).json({ error: 'El correo ya está registrado' });
+    if (err.code === '23505') return res.status(409).json({ error: 'Este correo ya está registrado', field: 'email' });
     res.status(500).json({ error: 'Error al registrar', details: err.message });
   }
 });
 
 app.post('/api/tenant/login', async (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ error: 'Faltan email o password' });
+  if (!email || !password) return res.status(400).json({ error: 'Completa todos los campos' });
   if (!dbReady) return res.status(503).json({ error: 'Base de datos no disponible' });
 
   try {
-    const { rows } = await pool.query('SELECT * FROM tenants WHERE email = $1 AND active = true', [email]);
+    const { rows } = await pool.query('SELECT * FROM tenants WHERE email = $1', [email]);
     const tenant = rows[0];
-    if (!tenant) return res.status(401).json({ error: 'Credenciales incorrectas' });
+    if (!tenant) return res.status(401).json({ error: 'Correo o contraseña incorrectos' });
+    if (!tenant.active) return res.status(403).json({ error: 'Tu cuenta ha sido suspendida. Contacta soporte.' });
     const valid = await bcrypt.compare(password, tenant.password_hash);
-    if (!valid)  return res.status(401).json({ error: 'Credenciales incorrectas' });
+    if (!valid)  return res.status(401).json({ error: 'Correo o contraseña incorrectos' });
     const token = jwt.sign({ tenantId: tenant.id, email: tenant.email }, JWT_SECRET, { expiresIn: '30d' });
-    res.json({ success: true, token, tenant: { id: tenant.id, businessName: tenant.business_name, email: tenant.email, plan: tenant.plan } });
+    res.json({
+      success: true,
+      token,
+      tenant: { id: tenant.id, businessName: tenant.business_name, fullName: tenant.full_name, email: tenant.email, plan: tenant.plan, country: tenant.country },
+    });
   } catch (err) {
     res.status(500).json({ error: 'Error al iniciar sesión', details: err.message });
   }
@@ -593,7 +612,7 @@ app.post('/api/tenant/login', async (req, res) => {
 app.get('/api/tenant/profile', requireAuth, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      'SELECT id, business_name, email, plan, whatsapp_phone_number_id, instagram_account_id, created_at FROM tenants WHERE id = $1',
+      'SELECT id, business_name, full_name, email, plan, country, whatsapp_number, whatsapp_phone_number_id, instagram_account_id, created_at FROM tenants WHERE id = $1',
       [req.tenant.tenantId]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Tenant no encontrado' });
@@ -602,8 +621,11 @@ app.get('/api/tenant/profile', requireAuth, async (req, res) => {
     res.json({
       id:                      t.id,
       business_name:           t.business_name,
+      full_name:               t.full_name,
       email:                   t.email,
       plan:                    t.plan,
+      country:                 t.country,
+      whatsapp_number:         t.whatsapp_number,
       created_at:              t.created_at,
       instagram_account_id:    t.instagram_account_id,
       whatsapp_connected:      !!phoneId,
