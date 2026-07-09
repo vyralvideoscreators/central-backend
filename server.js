@@ -597,27 +597,66 @@ app.get('/api/tenant/profile', requireAuth, async (req, res) => {
       [req.tenant.tenantId]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Tenant no encontrado' });
-    res.json(rows[0]);
+    const t = rows[0];
+    const phoneId = t.whatsapp_phone_number_id;
+    res.json({
+      id:                      t.id,
+      business_name:           t.business_name,
+      email:                   t.email,
+      plan:                    t.plan,
+      created_at:              t.created_at,
+      instagram_account_id:    t.instagram_account_id,
+      whatsapp_connected:      !!phoneId,
+      whatsapp_phone_number_id: phoneId
+        ? '*'.repeat(Math.max(0, phoneId.length - 4)) + phoneId.slice(-4)
+        : null,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 app.put('/api/tenant/whatsapp', requireAuth, async (req, res) => {
-  const { phoneNumberId, token, instagramAccessToken, instagramAccountId } = req.body;
+  const { whatsapp_phone_number_id, whatsapp_token } = req.body;
+  if (!whatsapp_phone_number_id || !whatsapp_token) {
+    return res.status(400).json({ error: 'Phone Number ID y Token son obligatorios' });
+  }
   if (!dbReady) return res.status(503).json({ error: 'Base de datos no disponible' });
   try {
-    await pool.query(`
-      UPDATE tenants SET
-        whatsapp_phone_number_id = COALESCE($1, whatsapp_phone_number_id),
-        whatsapp_token           = COALESCE($2, whatsapp_token),
-        instagram_access_token   = COALESCE($3, instagram_access_token),
-        instagram_account_id     = COALESCE($4, instagram_account_id)
-      WHERE id = $5
-    `, [phoneNumberId || null, token || null, instagramAccessToken || null, instagramAccountId || null, req.tenant.tenantId]);
-    res.json({ success: true, message: 'Credenciales actualizadas' });
+    await pool.query(
+      'UPDATE tenants SET whatsapp_phone_number_id = $1, whatsapp_token = $2 WHERE id = $3',
+      [whatsapp_phone_number_id.trim(), whatsapp_token.trim(), req.tenant.tenantId]
+    );
+    res.json({ success: true, message: 'WhatsApp conectado correctamente' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Error al guardar las credenciales' });
+  }
+});
+
+app.get('/api/tenant/test-whatsapp', requireAuth, async (req, res) => {
+  if (!dbReady) return res.status(503).json({ success: false, error: 'Base de datos no disponible' });
+  try {
+    const { rows } = await pool.query(
+      'SELECT whatsapp_phone_number_id, whatsapp_token FROM tenants WHERE id = $1',
+      [req.tenant.tenantId]
+    );
+    const t = rows[0];
+    if (!t?.whatsapp_phone_number_id || !t?.whatsapp_token) {
+      return res.json({ success: false, error: 'No hay credenciales de WhatsApp guardadas' });
+    }
+    const metaRes = await axios.get(
+      `${GRAPH_BASE}/${t.whatsapp_phone_number_id}`,
+      { headers: { Authorization: `Bearer ${t.whatsapp_token}` } }
+    );
+    const d = metaRes.data;
+    res.json({
+      success:       true,
+      phone_number:  d.display_phone_number || d.phone_number || '—',
+      verified_name: d.verified_name || d.name || '—',
+    });
+  } catch (err) {
+    const msg = err.response?.data?.error?.message || 'Credenciales inválidas o token expirado';
+    res.json({ success: false, error: msg });
   }
 });
 
