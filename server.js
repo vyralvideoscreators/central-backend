@@ -14,15 +14,27 @@ const puppeteer  = require('puppeteer');
 const { Pool }   = require('pg');
 const bcrypt     = require('bcrypt');
 const jwt        = require('jsonwebtoken');
+const Stripe     = require('stripe');
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '20mb' }));
+// El webhook de Stripe necesita el body sin procesar para validar la firma
+// (ver /api/billing/webhook) — se excluye acá del parser JSON global.
+app.use((req, res, next) => {
+  if (req.originalUrl === '/api/billing/webhook') return next();
+  express.json({ limit: '20mb' })(req, res, next);
+});
 
 const PORT             = process.env.PORT || 3000;
 const GRAPH_API_VERSION = 'v21.0';
 const GRAPH_BASE       = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 const JWT_SECRET       = process.env.JWT_SECRET || 'central_jwt_dev_secret_cambiar_en_prod';
+
+const stripe           = process.env.STRIPE_SECRET_KEY ? Stripe(process.env.STRIPE_SECRET_KEY) : null;
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
+const STRIPE_PRICE_PRO      = process.env.STRIPE_PRICE_PRO || '';
+const STRIPE_PRICE_BUSINESS = process.env.STRIPE_PRICE_BUSINESS || '';
+const APP_URL               = process.env.APP_URL || 'https://central-backend-production.up.railway.app';
 
 // Variables de entorno de compatibilidad (para el tenant por defecto / legacy)
 const DEFAULT_PHONE_ID  = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -65,6 +77,10 @@ async function initDB() {
         plan                      TEXT DEFAULT 'basic',
         country                   TEXT,
         whatsapp_number           TEXT,
+        stripe_customer_id        TEXT,
+        stripe_subscription_id    TEXT,
+        plan_expires_at           TIMESTAMP,
+        billing_status            TEXT DEFAULT 'free',
         whatsapp_phone_number_id  TEXT,
         whatsapp_token            TEXT,
         instagram_access_token    TEXT,
@@ -917,6 +933,176 @@ app.get('/privacy', (req, res) => {
   <h2>4. Contacto</h2>
   <p><a href="mailto:vyralvideos.creators@gmail.com">vyralvideos.creators@gmail.com</a></p>
   </body></html>`);
+});
+
+// ══════════════════════════════════════════════════════════════
+// BILLING — Stripe
+// ══════════════════════════════════════════════════════════════
+
+// Webhook necesita raw body — registrar ANTES de express.json()
+// (express.json ya está arriba, así que usamos express.raw solo para este path)
+app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe no configurado' });
+  const sig = req.headers['stripe-signature'];
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    console.error('⚠️  Stripe webhook firma inválida:', err.message);
+    return res.status(400).send('Webhook signature invalid');
+  }
+
+  try {
+    if (event.type === 'checkout.session.completed') {
+      const session    = event.data.object;
+      const tenantId   = session.metadata?.tenantId;
+      const plan       = session.metadata?.plan;
+      const customerId = session.customer;
+      const subId      = session.subscription;
+      if (tenantId && plan) {
+        await pool.query(
+          'UPDATE tenants SET plan=$1, stripe_customer_id=$2, stripe_subscription_id=$3, billing_status=$4 WHERE id=$5',
+          [plan, customerId, subId, 'active', tenantId]
+        );
+        console.log(`✅ Stripe: tenant ${tenantId} activó plan ${plan}`);
+      }
+    }
+
+    if (event.type === 'invoice.payment_succeeded') {
+      const invoice = event.data.object;
+      const subId   = invoice.subscription;
+      if (subId) {
+        const periodEnd = new Date(invoice.lines?.data?.[0]?.period?.end * 1000 || Date.now());
+        await pool.query(
+          'UPDATE tenants SET billing_status=$1, plan_expires_at=$2 WHERE stripe_subscription_id=$3',
+          ['active', periodEnd, subId]
+        );
+        console.log(`✅ Stripe: pago exitoso para sub ${subId}`);
+      }
+    }
+
+    if (event.type === 'invoice.payment_failed') {
+      const invoice = event.data.object;
+      const subId   = invoice.subscription;
+      if (subId) {
+        await pool.query(
+          'UPDATE tenants SET billing_status=$1 WHERE stripe_subscription_id=$2',
+          ['past_due', subId]
+        );
+        console.warn(`⚠️  Stripe: pago fallido para sub ${subId}`);
+      }
+    }
+
+    if (event.type === 'customer.subscription.deleted') {
+      const sub = event.data.object;
+      await pool.query(
+        'UPDATE tenants SET plan=$1, billing_status=$2, stripe_subscription_id=$3 WHERE stripe_subscription_id=$4',
+        ['basic', 'cancelled', null, sub.id]
+      );
+      console.log(`⚠️  Stripe: suscripción ${sub.id} cancelada — tenant bajado a basic`);
+    }
+  } catch (err) {
+    console.error('Error procesando evento Stripe:', err.message);
+  }
+
+  res.json({ received: true });
+});
+
+app.post('/api/billing/create-checkout', requireAuth, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe no configurado' });
+  const { plan } = req.body;
+  if (!['pro','business'].includes(plan)) return res.status(400).json({ error: 'Plan inválido' });
+  const priceId = plan === 'pro' ? STRIPE_PRICE_PRO : STRIPE_PRICE_BUSINESS;
+  if (!priceId) return res.status(503).json({ error: `STRIPE_PRICE_${plan.toUpperCase()} no configurado` });
+
+  try {
+    const { rows } = await pool.query('SELECT * FROM tenants WHERE id=$1', [req.tenant.tenantId]);
+    const tenant   = rows[0];
+    if (!tenant) return res.status(404).json({ error: 'Tenant no encontrado' });
+
+    let customerId = tenant.stripe_customer_id;
+    if (!customerId) {
+      const customer = await stripe.customers.create({ email: tenant.email, name: tenant.business_name, metadata: { tenantId: tenant.id } });
+      customerId = customer.id;
+      await pool.query('UPDATE tenants SET stripe_customer_id=$1 WHERE id=$2', [customerId, tenant.id]);
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      customer:            customerId,
+      payment_method_types: ['card'],
+      mode:                'subscription',
+      line_items:          [{ price: priceId, quantity: 1 }],
+      success_url:         `${APP_URL}/central-mvp-v63%20(1)%20-%20copia.html?payment=success`,
+      cancel_url:          `${APP_URL}/central-mvp-v63%20(1)%20-%20copia.html?payment=cancelled`,
+      metadata:            { tenantId: tenant.id, plan },
+    });
+
+    res.json({ checkoutUrl: session.url });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/billing/status', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT plan, billing_status, plan_expires_at, stripe_subscription_id FROM tenants WHERE id=$1',
+      [req.tenant.tenantId]
+    );
+    const t = rows[0];
+    if (!t) return res.status(404).json({ error: 'Tenant no encontrado' });
+
+    let nextBillingDate = null;
+    if (stripe && t.stripe_subscription_id) {
+      try {
+        const sub = await stripe.subscriptions.retrieve(t.stripe_subscription_id);
+        nextBillingDate = new Date(sub.current_period_end * 1000).toISOString();
+      } catch {}
+    }
+
+    res.json({
+      plan:           t.plan,
+      billingStatus:  t.billing_status || 'free',
+      planExpiresAt:  t.plan_expires_at,
+      nextBillingDate,
+      hasSubscription: !!t.stripe_subscription_id,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/billing/cancel', requireAuth, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe no configurado' });
+  try {
+    const { rows } = await pool.query('SELECT stripe_subscription_id FROM tenants WHERE id=$1', [req.tenant.tenantId]);
+    const subId = rows[0]?.stripe_subscription_id;
+    if (!subId) return res.status(400).json({ error: 'No tienes una suscripción activa' });
+
+    const sub = await stripe.subscriptions.update(subId, { cancel_at_period_end: true });
+    const cancelDate = new Date(sub.current_period_end * 1000).toLocaleDateString('es-ES', { day:'2-digit', month:'long', year:'numeric' });
+    await pool.query('UPDATE tenants SET billing_status=$1 WHERE id=$2', ['cancelled', req.tenant.tenantId]);
+    res.json({ success: true, message: `Tu suscripción se cancelará el ${cancelDate}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/billing/portal', requireAuth, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe no configurado' });
+  try {
+    const { rows } = await pool.query('SELECT stripe_customer_id FROM tenants WHERE id=$1', [req.tenant.tenantId]);
+    const customerId = rows[0]?.stripe_customer_id;
+    if (!customerId) return res.status(400).json({ error: 'No tienes una cuenta de facturación aún' });
+
+    const session = await stripe.billingPortal.sessions.create({
+      customer:   customerId,
+      return_url: `${APP_URL}/central-mvp-v63%20(1)%20-%20copia.html`,
+    });
+    res.json({ portalUrl: session.url });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ══════════════════════════════════════════════════════════════
