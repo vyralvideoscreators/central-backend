@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CENTRAL — Acceso</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:      #0d0d14;
+  --surface: #15151f;
+  --card:    #1a1a27;
+  --border:  rgba(255,255,255,0.08);
+  --border2: rgba(255,255,255,0.15);
+  --text:    #e8e8f0;
+  --text2:   #9999bb;
+  --text3:   #5555aa;
+  --accent:  #7c5cfc;
+  --accent2: #a78bfa;
+  --green:   #22c55e;
+  --red:     #ef4444;
+  --yellow:  #f5c842;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, 'Segoe UI', Arial, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+/* ── Logo ── */
+.logo-row {
+  text-align: center;
+  margin-bottom: 28px;
+}
+.logo-mark {
+  width: 52px; height: 52px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #7c5cfc, #a78bfa);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 22px; font-weight: 900; color: #fff;
+  margin-bottom: 10px;
+  box-shadow: 0 8px 32px rgba(124,92,252,0.35);
+}
+.logo-name { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
+.logo-sub  { font-size: 13px; color: var(--text2); margin-top: 4px; max-width: 320px; margin-inline: auto; line-height: 1.4; }
+
+/* ── Layout desktop ── */
+.main-wrap {
+  width: 100%;
+  max-width: 900px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+.panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 28px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+}
+.panel-title {
+  font-size: 17px; font-weight: 800; margin-bottom: 4px;
+}
+.panel-sub {
+  font-size: 12px; color: var(--text2); margin-bottom: 20px;
+}
+
+/* ── Mobile tabs ── */
+.mobile-tabs {
+  display: none;
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 4px;
+  margin-bottom: 16px;
+  width: 100%;
+  max-width: 480px;
+}
+.mobile-tab {
+  flex: 1; text-align: center; padding: 9px;
+  border-radius: 9px; font-size: 13px; font-weight: 600;
+  cursor: pointer; color: var(--text2); transition: all .2s;
+}
+.mobile-tab.active {
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+/* ── Form elements ── */
+.form-group { margin-bottom: 13px; position: relative; }
+.form-label { font-size: 11px; font-weight: 700; color: var(--text2); margin-bottom: 5px; display: block; letter-spacing: .4px; text-transform: uppercase; }
+.form-input, .form-select {
+  width: 100%; padding: 10px 12px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 9px; color: var(--text); font-size: 13.5px;
+  outline: none; transition: border-color .2s;
+  -webkit-appearance: none; appearance: none;
+}
+.form-select { cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239999bb' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+.form-input:focus, .form-select:focus { border-color: var(--accent); }
+.form-input::placeholder { color: var(--text3); }
+.form-input.error { border-color: var(--red); }
+
+.field-error { font-size: 11px; color: var(--red); margin-top: 4px; display: none; }
+.field-error.show { display: block; }
+
+/* ── Password strength ── */
+.pw-strength { margin-top: 6px; }
+.pw-bar { height: 3px; border-radius: 2px; background: var(--border); margin-bottom: 4px; overflow: hidden; }
+.pw-bar-fill { height: 100%; width: 0; border-radius: 2px; transition: width .3s, background .3s; }
+.pw-label { font-size: 10.5px; color: var(--text3); }
+
+/* ── Plan selector ── */
+.plan-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-bottom: 4px; }
+.plan-opt {
+  border: 1.5px solid var(--border);
+  border-radius: 10px; padding: 10px 8px;
+  cursor: pointer; transition: all .2s; text-align: center;
+}
+.plan-opt:hover { border-color: var(--accent); }
+.plan-opt.selected { border-color: var(--accent); background: rgba(124,92,252,0.1); }
+.plan-opt.selected.plan-pro { border-color: var(--accent2); background: rgba(167,139,250,0.1); }
+.plan-opt.selected.plan-biz { border-color: var(--yellow); background: rgba(245,200,66,0.08); }
+.plan-opt-name { font-size: 12px; font-weight: 800; margin-bottom: 2px; }
+.plan-basic .plan-opt-name { color: var(--green); }
+.plan-pro   .plan-opt-name { color: var(--accent2); }
+.plan-biz   .plan-opt-name { color: var(--yellow); }
+.plan-opt-price { font-size: 13px; font-weight: 700; color: var(--text); }
+.plan-opt-desc { font-size: 10px; color: var(--text3); margin-top: 3px; line-height: 1.3; }
+
+/* ── Checkbox ── */
+.check-row { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 14px; }
+.check-row input[type=checkbox] { margin-top: 2px; accent-color: var(--accent); flex-shrink: 0; }
+.check-label { font-size: 12px; color: var(--text2); line-height: 1.5; }
+.check-label a { color: var(--accent2); text-decoration: none; }
+
+/* ── Buttons ── */
+.btn-primary {
+  width: 100%; padding: 12px;
+  background: linear-gradient(135deg, #7c5cfc, #a78bfa);
+  color: #fff; border: none; border-radius: 10px;
+  font-size: 14px; font-weight: 700; cursor: pointer;
+  transition: opacity .2s;
+  box-shadow: 0 4px 16px rgba(124,92,252,0.35);
+}
+.btn-primary:hover { opacity: .9; }
+.btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── Messages ── */
+.msg-box {
+  border-radius: 8px; padding: 9px 12px;
+  font-size: 12.5px; margin-bottom: 14px; display: none;
+}
+.msg-error  { background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.3); color: var(--red); }
+.msg-ok     { background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.3); color: var(--green); }
+
+/* ── Divider ── */
+.divider { width: 1px; background: var(--border); align-self: stretch; display: block; }
+
+/* ── Spinner ── */
+.spinner {
+  display: inline-block; width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,.3); border-top-color: #fff;
+  border-radius: 50%; animation: spin .7s linear infinite;
+  vertical-align: middle; margin-right: 6px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Login panel extras ── */
+.forgot-link { display: block; text-align: right; font-size: 11.5px; color: var(--accent2); text-decoration: none; margin-top: -6px; margin-bottom: 10px; }
+.login-logo { display: none; text-align: center; margin-bottom: 20px; }
+
+/* ── Footer ── */
+.footer-txt { text-align: center; font-size: 11px; color: var(--text3); margin-top: 20px; }
+.footer-txt a { color: var(--accent2); text-decoration: none; }
+
+/* ── Responsive mobile ── */
+@media (max-width: 680px) {
+  .logo-row { margin-bottom: 20px; }
+  .main-wrap { grid-template-columns: 1fr; max-width: 480px; }
+  .divider { display: none; }
+  .mobile-tabs { display: flex; }
+  .panel { animation: fadeIn .25s ease; }
+  .login-logo { display: block; }
+  .hide-mobile { display: none !important; }
+}
+@keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+</style>
+</head>
+<body>
+
+<div class="logo-row">
+  <div class="logo-mark">C</div>
+  <div class="logo-name">CENTRAL</div>
+  <div class="logo-sub">El panel de control para tu negocio en redes sociales</div>
+</div>
+
+<!-- Mobile tabs -->
+<div class="mobile-tabs" id="mobileTabs">
+  <div class="mobile-tab active" id="mtabReg"   onclick="mobileTab('reg')">Crear cuenta</div>
+  <div class="mobile-tab"        id="mtabLogin" onclick="mobileTab('login')">Iniciar sesión</div>
+</div>
+
+<div class="main-wrap">
+
+  <!-- ── REGISTRO ── -->
+  <div class="panel" id="panelReg">
+    <div class="panel-title">Crear cuenta gratis</div>
+    <div class="panel-sub">Comienza hoy — sin tarjeta de crédito</div>
+
+    <div id="regErr" class="msg-box msg-error"></div>
+    <div id="regOk"  class="msg-box msg-ok"></div>
+
+    <div class="form-group">
+      <label class="form-label">Nombre del negocio</label>
+      <input class="form-input" id="rBusiness" type="text" placeholder="Ej: Mi Tienda Online" autocomplete="organization">
+      <div class="field-error" id="errBusiness"></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Tu nombre completo</label>
+      <input class="form-input" id="rFullName" type="text" placeholder="Ej: Carlos Rodríguez" autocomplete="name">
+      <div class="field-error" id="errFullName"></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Correo electrónico</label>
+      <input class="form-input" id="rEmail" type="email" placeholder="tu@correo.com" autocomplete="email">
+      <div class="field-error" id="errEmail"></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Contraseña</label>
+      <input class="form-input" id="rPass" type="password" placeholder="Mínimo 8 caracteres" autocomplete="new-password" oninput="checkStrength(this.value)">
+      <div class="pw-strength">
+        <div class="pw-bar"><div class="pw-bar-fill" id="pwFill"></div></div>
+        <div class="pw-label" id="pwLabel">Escribe una contraseña</div>
+      </div>
+      <div class="field-error" id="errPass"></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Confirmar contraseña</label>
+      <input class="form-input" id="rPass2" type="password" placeholder="Repite la contraseña" autocomplete="new-password">
+      <div class="field-error" id="errPass2"></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">País</label>
+      <select class="form-select" id="rCountry">
+        <option value="">— Selecciona tu país —</option>
+        <option value="Venezuela">Venezuela</option>
+        <option value="Colombia">Colombia</option>
+        <option value="México">México</option>
+        <option value="Argentina">Argentina</option>
+        <option value="Chile">Chile</option>
+        <option value="Perú">Perú</option>
+        <option value="Ecuador">Ecuador</option>
+        <option value="Bolivia">Bolivia</option>
+        <option value="Paraguay">Paraguay</option>
+        <option value="Uruguay">Uruguay</option>
+        <option value="Panama">Panamá</option>
+        <option value="Costa Rica">Costa Rica</option>
+        <option value="Guatemala">Guatemala</option>
+        <option value="Honduras">Honduras</option>
+        <option value="El Salvador">El Salvador</option>
+        <option value="Nicaragua">Nicaragua</option>
+        <option value="República Dominicana">República Dominicana</option>
+        <option value="Cuba">Cuba</option>
+        <option value="Puerto Rico">Puerto Rico</option>
+        <option value="España">España</option>
+        <option value="Otro">Otro</option>
+      </select>
+      <div class="field-error" id="errCountry"></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">WhatsApp del negocio</label>
+      <input class="form-input" id="rWaNumber" type="tel" placeholder="Ej: +58 414 555 0100" autocomplete="tel">
+      <div class="field-error" id="errWa"></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" style="margin-bottom:10px;">Plan</label>
+      <div class="plan-grid">
+        <div class="plan-opt plan-basic selected" id="planBasic" onclick="selectPlan('basic')">
+          <div class="plan-opt-name">Basic</div>
+          <div class="plan-opt-price">Gratis</div>
+          <div class="plan-opt-desc">1 canal · hasta 500 mensajes/mes</div>
+        </div>
+        <div class="plan-opt plan-pro" id="planPro" onclick="selectPlan('pro')">
+          <div class="plan-opt-name">Pro</div>
+          <div class="plan-opt-price">$29<span style="font-size:10px;color:var(--text3)">/mes</span></div>
+          <div class="plan-opt-desc">3 canales · mensajes ilimitados</div>
+        </div>
+        <div class="plan-opt plan-biz" id="planBiz" onclick="selectPlan('business')">
+          <div class="plan-opt-name">Business</div>
+          <div class="plan-opt-price">$59<span style="font-size:10px;color:var(--text3)">/mes</span></div>
+          <div class="plan-opt-desc">Canales ilimitados · equipo + API</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="check-row">
+      <input type="checkbox" id="rTerms">
+      <label class="check-label" for="rTerms">Acepto los <a href="#">Términos y condiciones</a> y la <a href="#">Política de privacidad</a></label>
+    </div>
+
+    <button class="btn-primary" id="btnReg" onclick="doRegister()">Crear cuenta gratis</button>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ── LOGIN ── -->
+  <div class="panel" id="panelLogin">
+    <div class="login-logo hide-mobile" style="display:none"></div>
+    <div class="panel-title">Iniciar sesión</div>
+    <div class="panel-sub">Accede a tu panel de negocios</div>
+
+    <div id="loginErr" class="msg-box msg-error"></div>
+    <div id="loginOk"  class="msg-box msg-ok"></div>
+
+    <div class="form-group">
+      <label class="form-label">Correo electrónico</label>
+      <input class="form-input" id="lEmail" type="email" placeholder="tu@correo.com" autocomplete="email">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Contraseña</label>
+      <input class="form-input" id="lPass" type="password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+
+    <a href="#" class="forgot-link">¿Olvidaste tu contraseña?</a>
+
+    <button class="btn-primary" id="btnLogin" onclick="doLogin()">Entrar a CENTRAL</button>
+
+    <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border);text-align:center;font-size:12px;color:var(--text2);">
+      ¿No tienes cuenta? <a href="#" onclick="mobileTab('reg');return false;" style="color:var(--accent2);">Créala gratis</a>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer-txt">© 2025 CENTRAL · <a href="#">Términos</a> · <a href="#">Privacidad</a></div>
+
+<script>
+const BACKEND = 'https://central-backend-production.up.railway.app';
+const APP_URL = 'central-mvp-v63 (1) - copia.html';
+
+// Si ya hay JWT válido, ir directo a la app
+if (localStorage.getItem('central_jwt')) window.location.href = APP_URL;
+
+let selectedPlan = 'basic';
+
+// ── Mobile tabs ──
+function mobileTab(tab) {
+  document.getElementById('mtabReg').classList.toggle('active', tab === 'reg');
+  document.getElementById('mtabLogin').classList.toggle('active', tab === 'login');
+  document.getElementById('panelReg').style.display   = tab === 'reg'   ? '' : 'none';
+  document.getElementById('panelLogin').style.display = tab === 'login' ? '' : 'none';
+}
+
+// ── Plan selector ──
+function selectPlan(plan) {
+  selectedPlan = plan;
+  ['basic','pro','business'].forEach(p => {
+    const el = document.getElementById('plan' + p.charAt(0).toUpperCase() + p.slice(1));
+    if (el) el.classList.toggle('selected', p === plan);
+  });
+}
+
+// ── Password strength ──
+function checkStrength(val) {
+  const fill  = document.getElementById('pwFill');
+  const label = document.getElementById('pwLabel');
+  if (!fill) return;
+  let score = 0;
+  if (val.length >= 8)  score++;
+  if (val.length >= 12) score++;
+  if (/[A-Z]/.test(val)) score++;
+  if (/[0-9]/.test(val)) score++;
+  if (/[^A-Za-z0-9]/.test(val)) score++;
+  const pct   = Math.min(100, score * 22);
+  const color = score <= 1 ? '#ef4444' : score <= 3 ? '#f5c842' : '#22c55e';
+  const text  = score <= 1 ? 'Débil' : score <= 3 ? 'Media' : 'Fuerte';
+  fill.style.width      = pct + '%';
+  fill.style.background = color;
+  label.textContent     = val ? text : 'Escribe una contraseña';
+  label.style.color     = val ? color : 'var(--text3)';
+}
+
+// ── Field error helpers ──
+function clearErrors() {
+  document.querySelectorAll('.field-error').forEach(el => { el.textContent=''; el.classList.remove('show'); });
+  document.querySelectorAll('.form-input.error').forEach(el => el.classList.remove('error'));
+  ['regErr','regOk','loginErr','loginOk'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+}
+function fieldErr(inputId, errId, msg) {
+  const inp = document.getElementById(inputId);
+  const err = document.getElementById(errId);
+  if (inp) inp.classList.add('error');
+  if (err) { err.textContent = msg; err.classList.add('show'); }
+}
+function showMsg(id, msg) {
+  const el = document.getElementById(id);
+  if (el) { el.textContent = msg; el.style.display = 'block'; }
+}
+function setLoading(btnId, loading, defaultText) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.disabled = loading;
+  btn.innerHTML = loading ? '<span class="spinner"></span>Cargando…' : defaultText;
+}
+
+// ── Registro ──
+async function doRegister() {
+  clearErrors();
+  const businessName   = document.getElementById('rBusiness').value.trim();
+  const fullName       = document.getElementById('rFullName').value.trim();
+  const email          = document.getElementById('rEmail').value.trim();
+  const password       = document.getElementById('rPass').value;
+  const password2      = document.getElementById('rPass2').value;
+  const country        = document.getElementById('rCountry').value;
+  const whatsappNumber = document.getElementById('rWaNumber').value.trim();
+  const terms          = document.getElementById('rTerms').checked;
+
+  let valid = true;
+  if (!businessName)  { fieldErr('rBusiness','errBusiness','Ingresa el nombre del negocio'); valid=false; }
+  if (!fullName)      { fieldErr('rFullName','errFullName','Ingresa tu nombre completo'); valid=false; }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { fieldErr('rEmail','errEmail','Ingresa un correo válido'); valid=false; }
+  if (password.length < 8) { fieldErr('rPass','errPass','La contraseña debe tener al menos 8 caracteres'); valid=false; }
+  if (password !== password2) { fieldErr('rPass2','errPass2','Las contraseñas no coinciden'); valid=false; }
+  if (!country)       { fieldErr('rCountry','errCountry','Selecciona tu país'); valid=false; }
+  if (!terms)         { showMsg('regErr','Debes aceptar los términos y condiciones'); valid=false; }
+  if (!valid) return;
+
+  setLoading('btnReg', true, 'Crear cuenta gratis');
+  try {
+    const res  = await fetch(BACKEND + '/api/tenant/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ businessName, fullName, email, password, country, whatsappNumber, plan: selectedPlan }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      if (data.field === 'email') fieldErr('rEmail','errEmail', data.error);
+      else if (data.field === 'password') fieldErr('rPass','errPass', data.error);
+      else showMsg('regErr', data.error || 'Error al registrar');
+      return;
+    }
+    saveSession(data);
+    showMsg('regOk', '¡Cuenta creada! Redirigiendo…');
+    setTimeout(() => window.location.href = APP_URL, 800);
+  } catch {
+    showMsg('regErr', 'No se pudo conectar con el servidor');
+  } finally {
+    setLoading('btnReg', false, 'Crear cuenta gratis');
+  }
+}
+
+// ── Login ──
+async function doLogin() {
+  clearErrors();
+  const email    = document.getElementById('lEmail').value.trim();
+  const password = document.getElementById('lPass').value;
+  if (!email || !password) { showMsg('loginErr','Completa todos los campos'); return; }
+
+  setLoading('btnLogin', true, 'Entrar a CENTRAL');
+  try {
+    const res  = await fetch(BACKEND + '/api/tenant/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showMsg('loginErr', data.error || 'Correo o contraseña incorrectos'); return; }
+    saveSession(data);
+    showMsg('loginOk', 'Sesión iniciada — redirigiendo…');
+    setTimeout(() => window.location.href = APP_URL, 700);
+  } catch {
+    showMsg('loginErr', 'No se pudo conectar con el servidor');
+  } finally {
+    setLoading('btnLogin', false, 'Entrar a CENTRAL');
+  }
+}
+
+function saveSession(data) {
+  localStorage.setItem('central_jwt',    data.token);
+  localStorage.setItem('central_auth',   '1');
+  localStorage.setItem('central_tenant', JSON.stringify(data.tenant));
+}
+
+// ── Enter key ──
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const regVisible = !document.getElementById('panelReg').style.display || document.getElementById('panelReg').style.display !== 'none';
+  const focused = document.activeElement;
+  if (focused && (focused.closest('#panelLogin'))) doLogin();
+  else if (regVisible) doRegister();
+});
+</script>
+</body>
+</html>
