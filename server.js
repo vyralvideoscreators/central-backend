@@ -1039,6 +1039,7 @@ app.post('/api/billing/create-checkout', requireAuth, async (req, res) => {
 
     res.json({ checkoutUrl: session.url });
   } catch (err) {
+    console.error('❌ Stripe checkout error:', err.message, err.type, err.code);
     res.status(500).json({ error: err.message });
   }
 });
