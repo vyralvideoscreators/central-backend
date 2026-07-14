@@ -30,7 +30,7 @@ const GRAPH_API_VERSION = 'v21.0';
 const GRAPH_BASE       = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 const JWT_SECRET       = process.env.JWT_SECRET || 'central_jwt_dev_secret_cambiar_en_prod';
 
-const stripe           = process.env.STRIPE_SECRET_KEY ? Stripe(process.env.STRIPE_SECRET_KEY) : null;
+const stripe           = process.env.STRIPE_SECRET_KEY ? Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' }) : null;
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
 const STRIPE_PRICE_PRO      = process.env.STRIPE_PRICE_PRO || '';
 const STRIPE_PRICE_BUSINESS = process.env.STRIPE_PRICE_BUSINESS || '';
@@ -905,9 +905,15 @@ app.get('/auth/instagram/delete',  (req, res) => res.sendStatus(200));
 app.post('/auth/instagram/delete', (req, res) => res.sendStatus(200));
 
 // ══════════════════════════════════════════════════════════════
-// Health check & privacy
+// Servir archivos estáticos (HTML, CSS, JS del frontend)
+app.use(express.static(__dirname));
+
 // ══════════════════════════════════════════════════════════════
-app.get('/', (req, res) => res.json({
+// Health check & rutas raíz
+// ══════════════════════════════════════════════════════════════
+app.get('/', (req, res) => res.redirect('/central-registro.html'));
+app.get('/health', (req, res) => res.json({ status:'ok', db:dbReady, timestamp:new Date().toISOString() }));
+app.get('/status', (req, res) => res.json({
   status:    'ok',
   service:   'CENTRAL Backend',
   version:   '5.0 — Multi-tenant + PostgreSQL + WhatsApp + Instagram',
@@ -993,6 +999,25 @@ app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), asyn
       }
     }
 
+    if (event.type === 'customer.subscription.updated') {
+      const sub = event.data.object;
+      // Si el usuario reactivó desde el portal, sincronizar estado
+      const billing_status = sub.status === 'active' ? 'active' : sub.status;
+      const plan_map = {}; // plan se determina por metadata o price, no lo cambiamos aquí
+      if (sub.cancel_at_period_end) {
+        // Cancelación programada — sigue activo hasta fin de período
+        await pool.query(
+          'UPDATE tenants SET billing_status=$1 WHERE stripe_subscription_id=$2',
+          ['cancelled', sub.id]
+        );
+      } else if (sub.status === 'active') {
+        await pool.query(
+          'UPDATE tenants SET billing_status=$1 WHERE stripe_subscription_id=$2',
+          ['active', sub.id]
+        );
+      }
+    }
+
     if (event.type === 'customer.subscription.deleted') {
       const sub = event.data.object;
       await pool.query(
@@ -1032,8 +1057,8 @@ app.post('/api/billing/create-checkout', requireAuth, async (req, res) => {
       payment_method_types: ['card'],
       mode:                'subscription',
       line_items:          [{ price: priceId, quantity: 1 }],
-      success_url:         `${APP_URL}/central-mvp-v63%20(1)%20-%20copia.html?payment=success`,
-      cancel_url:          `${APP_URL}/central-mvp-v63%20(1)%20-%20copia.html?payment=cancelled`,
+      success_url:         `${APP_URL.replace(/\/$/, '')}/central-mvp-v63%20(1)%20-%20copia.html?payment=success`,
+      cancel_url:          `${APP_URL.replace(/\/$/, '')}/central-mvp-v63%20(1)%20-%20copia.html?payment=cancelled`,
       metadata:            { tenantId: tenant.id, plan },
     });
 
@@ -1082,7 +1107,8 @@ app.post('/api/billing/cancel', requireAuth, async (req, res) => {
 
     const sub = await stripe.subscriptions.update(subId, { cancel_at_period_end: true });
     const cancelDate = new Date(sub.current_period_end * 1000).toLocaleDateString('es-ES', { day:'2-digit', month:'long', year:'numeric' });
-    await pool.query('UPDATE tenants SET billing_status=$1 WHERE id=$2', ['cancelled', req.tenant.tenantId]);
+    // billing_status se actualiza vía webhook customer.subscription.updated, no aquí
+    // para que refleje el estado real de Stripe
     res.json({ success: true, message: `Tu suscripción se cancelará el ${cancelDate}` });
   } catch (err) {
     res.status(500).json({ error: err.message });
