@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CENTRAL — Admin</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:      #0d0d14;
+  --surface: #15151f;
+  --card:    #1a1a27;
+  --card2:   #1f1f2e;
+  --border:  rgba(255,255,255,0.08);
+  --border2: rgba(255,255,255,0.14);
+  --text:    #e8e8f0;
+  --text2:   #9999bb;
+  --text3:   #5555aa;
+  --accent:  #7c5cfc;
+  --accent2: #a78bfa;
+  --green:   #22c55e;
+  --red:     #ef4444;
+  --yellow:  #f5c842;
+  --orange:  #f97316;
+}
+body { background: var(--bg); color: var(--text); font-family: -apple-system,'Segoe UI',Arial,sans-serif; min-height: 100vh; }
+
+/* ── Login ── */
+#loginScreen {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.login-card {
+  width: 100%; max-width: 380px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 20px;
+  padding: 32px; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.login-logo { text-align: center; margin-bottom: 24px; }
+.logo-mark {
+  width: 48px; height: 48px; border-radius: 13px;
+  background: linear-gradient(135deg,#7c5cfc,#a78bfa);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 20px; font-weight: 900; color: #fff; margin-bottom: 10px;
+  box-shadow: 0 8px 24px rgba(124,92,252,0.4);
+}
+.login-title { font-size: 18px; font-weight: 800; }
+.login-sub   { font-size: 12px; color: var(--text2); margin-top: 3px; }
+.form-group  { margin-bottom: 14px; }
+.form-label  { font-size: 10.5px; font-weight: 700; color: var(--text2); margin-bottom: 5px; display: block; letter-spacing: .4px; text-transform: uppercase; }
+.form-input  { width: 100%; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; color: var(--text); font-size: 13.5px; outline: none; transition: border-color .2s; }
+.form-input:focus { border-color: var(--accent); }
+.btn-primary { width: 100%; padding: 11px; background: linear-gradient(135deg,#7c5cfc,#a78bfa); color:#fff; border:none; border-radius:9px; font-size:14px; font-weight:700; cursor:pointer; margin-top:4px; }
+.btn-primary:disabled { opacity:.5; cursor:not-allowed; }
+.msg-error { background: rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.3); color:var(--red); border-radius:8px; padding:9px 12px; font-size:12.5px; margin-bottom:14px; display:none; }
+.spinner { display:inline-block; width:13px; height:13px; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; margin-right:6px; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* ── App shell ── */
+#appScreen { display: none; min-height: 100vh; }
+
+/* ── Top bar ── */
+.topbar {
+  height: 56px; background: var(--surface); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 20px; gap: 12px; position: sticky; top: 0; z-index: 100;
+}
+.topbar-logo { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 15px; }
+.topbar-logo-mark { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(135deg,#7c5cfc,#a78bfa); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:900; color:#fff; }
+.topbar-badge { background: rgba(239,68,68,.15); color:var(--red); border:1px solid rgba(239,68,68,.3); border-radius:5px; font-size:10px; font-weight:700; padding:2px 7px; letter-spacing:.5px; }
+.topbar-right { margin-left:auto; display:flex; align-items:center; gap:10px; }
+.topbar-email { font-size:12px; color:var(--text2); }
+.btn-sm { padding:6px 12px; border-radius:7px; font-size:12px; font-weight:600; cursor:pointer; border:1px solid var(--border2); background:transparent; color:var(--text2); transition:all .2s; }
+.btn-sm:hover { background:var(--card2); color:var(--text); }
+
+/* ── Main layout ── */
+.main { display: flex; gap: 0; }
+.sidebar {
+  width: 200px; min-height: calc(100vh - 56px); background: var(--surface);
+  border-right: 1px solid var(--border); padding: 16px 0; flex-shrink: 0;
+  position: sticky; top: 56px; align-self: flex-start; height: calc(100vh - 56px);
+}
+.nav-item {
+  display: flex; align-items: center; gap: 9px; padding: 9px 16px;
+  font-size: 13px; font-weight: 500; color: var(--text2); cursor: pointer;
+  transition: all .15s; border-radius: 0;
+}
+.nav-item:hover { background: var(--card); color: var(--text); }
+.nav-item.active { background: var(--card); color: var(--accent2); font-weight: 600; border-right: 2px solid var(--accent); }
+.nav-icon { font-size: 15px; width: 20px; text-align: center; }
+
+.content { flex: 1; padding: 24px; overflow: auto; }
+.page { display: none; }
+.page.active { display: block; }
+
+/* ── Section title ── */
+.page-title { font-size: 20px; font-weight: 800; margin-bottom: 4px; }
+.page-sub   { font-size: 13px; color: var(--text2); margin-bottom: 24px; }
+
+/* ── Stat cards ── */
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(180px,1fr)); gap: 14px; margin-bottom: 28px; }
+.stat-card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  padding: 16px 18px;
+}
+.stat-label { font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 8px; }
+.stat-value { font-size: 28px; font-weight: 800; line-height: 1; }
+.stat-sub   { font-size: 11px; color: var(--text2); margin-top: 4px; }
+.stat-green  { color: var(--green); }
+.stat-red    { color: var(--red); }
+.stat-accent { color: var(--accent2); }
+.stat-yellow { color: var(--yellow); }
+
+/* ── Plan chips ── */
+.plan-chips { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 28px; }
+.plan-chip { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; text-align: center; min-width: 100px; }
+.plan-chip-name { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 4px; }
+.plan-chip-count { font-size: 22px; font-weight: 800; }
+.chip-basic   .plan-chip-name  { color: var(--green); }
+.chip-pro     .plan-chip-name  { color: var(--accent2); }
+.chip-business .plan-chip-name { color: var(--yellow); }
+
+/* ── Filters bar ── */
+.filters-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+.search-input { padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; color: var(--text); font-size: 13px; outline: none; width: 240px; }
+.search-input:focus { border-color: var(--accent); }
+.filter-select { padding: 7px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; color: var(--text); font-size: 12.5px; outline: none; cursor: pointer; }
+.filter-select:focus { border-color: var(--accent); }
+.filters-right { margin-left: auto; font-size: 12px; color: var(--text2); }
+
+/* ── Table ── */
+.table-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead th { padding: 11px 14px; text-align: left; font-size: 10.5px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: .4px; background: var(--surface); border-bottom: 1px solid var(--border); cursor: pointer; white-space: nowrap; }
+thead th:hover { color: var(--text); }
+tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+tbody tr:last-child { border-bottom: none; }
+tbody tr:hover { background: var(--card2); }
+tbody td { padding: 11px 14px; vertical-align: middle; }
+
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 5px; font-size: 11px; font-weight: 600; }
+.badge-basic    { background: rgba(34,197,94,.12); color: var(--green); }
+.badge-pro      { background: rgba(167,139,250,.12); color: var(--accent2); }
+.badge-business { background: rgba(245,200,66,.12); color: var(--yellow); }
+.badge-active   { background: rgba(34,197,94,.12); color: var(--green); }
+.badge-suspended{ background: rgba(239,68,68,.12); color: var(--red); }
+.badge-yes      { background: rgba(34,197,94,.12); color: var(--green); }
+.badge-no       { background: rgba(100,100,120,.12); color: var(--text3); }
+
+.action-btn { background: transparent; border: none; color: var(--text2); cursor: pointer; padding: 4px 8px; border-radius: 6px; font-size: 16px; transition: all .15s; }
+.action-btn:hover { background: var(--surface); color: var(--text); }
+
+/* ── Pagination ── */
+.pagination { display: flex; align-items: center; gap: 8px; margin-top: 16px; justify-content: center; }
+.page-btn { padding: 6px 12px; border-radius: 7px; border: 1px solid var(--border); background: var(--card); color: var(--text2); font-size: 12.5px; cursor: pointer; transition: all .15s; }
+.page-btn:hover:not(:disabled) { background: var(--card2); color: var(--text); }
+.page-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.page-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ── Side panel ── */
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 200; display: none; }
+.overlay.open { display: block; }
+.side-panel {
+  position: fixed; top: 0; right: -480px; width: 440px; height: 100vh;
+  background: var(--surface); border-left: 1px solid var(--border2);
+  z-index: 201; overflow-y: auto; transition: right .3s ease; padding: 24px;
+}
+.side-panel.open { right: 0; }
+.sp-close { position: absolute; top: 16px; right: 16px; background: var(--card); border: none; color: var(--text2); width: 32px; height: 32px; border-radius: 8px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; }
+.sp-title { font-size: 17px; font-weight: 800; margin-bottom: 4px; padding-right: 40px; }
+.sp-sub   { font-size: 12px; color: var(--text2); margin-bottom: 20px; }
+.sp-section { margin-bottom: 20px; }
+.sp-section-title { font-size: 10.5px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.sp-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--border); }
+.sp-row:last-child { border-bottom: none; }
+.sp-row-label { font-size: 12px; color: var(--text2); }
+.sp-row-value { font-size: 12.5px; font-weight: 600; text-align: right; max-width: 220px; word-break: break-all; }
+.sp-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; }
+.btn-action { width: 100%; padding: 9px 14px; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: var(--card); color: var(--text); text-align: left; transition: all .15s; }
+.btn-action:hover { background: var(--card2); }
+.btn-action.danger { color: var(--red); border-color: rgba(239,68,68,.3); }
+.btn-action.danger:hover { background: rgba(239,68,68,.08); }
+.btn-action.success { color: var(--green); border-color: rgba(34,197,94,.3); }
+.plan-select-row { display: flex; gap: 8px; align-items: center; }
+.plan-select-row select { flex: 1; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 13px; outline: none; }
+.plan-select-row button { padding: 8px 14px; border-radius: 8px; background: var(--accent); color: #fff; border: none; font-size: 13px; font-weight: 600; cursor: pointer; }
+
+/* ── Toast ── */
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(60px); background: var(--card2); border: 1px solid var(--border2); color: var(--text); padding: 10px 20px; border-radius: 10px; font-size: 13px; font-weight: 500; z-index: 9999; transition: transform .3s; pointer-events: none; white-space: nowrap; }
+.toast.show { transform: translateX(-50%) translateY(0); }
+
+/* ── Confirm dialog ── */
+.confirm-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 300; display:none; align-items:center; justify-content:center; }
+.confirm-overlay.open { display:flex; }
+.confirm-box { background: var(--card); border: 1px solid var(--border2); border-radius: 16px; padding: 28px; max-width: 360px; width: 100%; }
+.confirm-title { font-size: 16px; font-weight: 800; margin-bottom: 8px; }
+.confirm-msg   { font-size: 13px; color: var(--text2); margin-bottom: 20px; line-height: 1.5; }
+.confirm-btns  { display: flex; gap: 8px; justify-content: flex-end; }
+.btn-cancel { padding: 9px 16px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); color: var(--text2); font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-danger { padding: 9px 16px; border-radius: 8px; background: var(--red); border: none; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+
+/* ── Loading ── */
+.loading-row td { text-align: center; color: var(--text2); padding: 40px; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<!-- ── LOGIN ── -->
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="logo-mark">C</div>
+      <div class="login-title">CENTRAL Admin</div>
+      <div class="login-sub">Panel de superadministrador</div>
+    </div>
+    <div id="loginErr" class="msg-error"></div>
+    <div class="form-group">
+      <label class="form-label">Email de admin</label>
+      <input class="form-input" id="aEmail" type="email" placeholder="admin@central.app" autocomplete="email">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Contraseña</label>
+      <input class="form-input" id="aPass" type="password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn-primary" id="btnLogin" onclick="doAdminLogin()">Entrar al panel</button>
+  </div>
+</div>
+
+<!-- ── APP ── -->
+<div id="appScreen">
+  <div class="topbar">
+    <div class="topbar-logo">
+      <div class="topbar-logo-mark">C</div>
+      CENTRAL
+    </div>
+    <span class="topbar-badge">SUPERADMIN</span>
+    <div class="topbar-right">
+      <span class="topbar-email" id="topEmail"></span>
+      <button class="btn-sm" onclick="adminLogout()">Cerrar sesión</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="sidebar">
+      <div class="nav-item active" onclick="showPage('dashboard',this)">
+        <span class="nav-icon">📊</span> Dashboard
+      </div>
+      <div class="nav-item" onclick="showPage('tenants',this)">
+        <span class="nav-icon">🏢</span> Negocios
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- DASHBOARD -->
+      <div class="page active" id="page-dashboard">
+        <div class="page-title">Dashboard</div>
+        <div class="page-sub">Resumen de actividad de la plataforma</div>
+
+        <div class="stats-grid" id="statsGrid">
+          <div class="stat-card"><div class="stat-label">Total negocios</div><div class="stat-value stat-accent" id="st-total">—</div></div>
+          <div class="stat-card"><div class="stat-label">Activos</div><div class="stat-value stat-green" id="st-activos">—</div></div>
+          <div class="stat-card"><div class="stat-label">Suspendidos</div><div class="stat-value stat-red" id="st-suspendidos">—</div></div>
+          <div class="stat-card"><div class="stat-label">Nuevos esta semana</div><div class="stat-value stat-yellow" id="st-nuevos">—</div></div>
+          <div class="stat-card"><div class="stat-label">Conversaciones totales</div><div class="stat-value" id="st-convos">—</div></div>
+          <div class="stat-card"><div class="stat-label">Mensajes totales</div><div class="stat-value" id="st-msgs">—</div></div>
+        </div>
+
+        <div class="page-sub" style="margin-bottom:12px;">Distribución por plan</div>
+        <div class="plan-chips">
+          <div class="plan-chip chip-basic">
+            <div class="plan-chip-name">Basic</div>
+            <div class="plan-chip-count stat-green" id="pc-basic">—</div>
+          </div>
+          <div class="plan-chip chip-pro">
+            <div class="plan-chip-name">Pro</div>
+            <div class="plan-chip-count stat-accent" id="pc-pro">—</div>
+          </div>
+          <div class="plan-chip chip-business">
+            <div class="plan-chip-name">Business</div>
+            <div class="plan-chip-count stat-yellow" id="pc-business">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TENANTS -->
+      <div class="page" id="page-tenants">
+        <div class="page-title">Negocios registrados</div>
+        <div class="page-sub">Gestiona todos los tenants de la plataforma</div>
+
+        <div class="filters-bar">
+          <input class="search-input" id="searchInput" type="text" placeholder="🔍  Buscar por nombre o email…" oninput="onSearch()">
+          <select class="filter-select" id="filterPlan" onchange="loadTenants(1)">
+            <option value="">Todos los planes</option>
+            <option value="basic">Basic</option>
+            <option value="pro">Pro</option>
+            <option value="business">Business</option>
+          </select>
+          <select class="filter-select" id="filterStatus" onchange="loadTenants(1)">
+            <option value="">Todos los estados</option>
+            <option value="active">Activos</option>
+            <option value="suspended">Suspendidos</option>
+          </select>
+          <div class="filters-right" id="totalCount"></div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Negocio</th>
+                <th>Email</th>
+                <th>Plan</th>
+                <th>País</th>
+                <th>WhatsApp</th>
+                <th>Registro</th>
+                <th>Estado</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="tenantsBody">
+              <tr class="loading-row"><td colspan="8">Cargando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pagination" id="paginationBar"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ── OVERLAY + SIDE PANEL ── -->
+<div class="overlay" id="overlay" onclick="closePanel()"></div>
+<div class="side-panel" id="sidePanel">
+  <button class="sp-close" onclick="closePanel()">✕</button>
+  <div id="sidePanelContent"></div>
+</div>
+
+<!-- ── CONFIRM DIALOG ── -->
+<div class="confirm-overlay" id="confirmOverlay">
+  <div class="confirm-box">
+    <div class="confirm-title" id="confirmTitle">¿Estás seguro?</div>
+    <div class="confirm-msg"   id="confirmMsg"></div>
+    <div class="confirm-btns">
+      <button class="btn-cancel" onclick="closeConfirm()">Cancelar</button>
+      <button class="btn-danger" id="confirmOkBtn">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOAST ── -->
+<div class="toast" id="toast"></div>
+
+<script>
+const BACKEND = 'https://central-backend-production.up.railway.app';
+
+let adminJwt   = localStorage.getItem('central_admin_jwt') || '';
+let adminEmail = '';
+let currentPage = 1;
+let searchTimer = null;
+let currentTenant = null;
+
+// ── Init ──
+if (adminJwt) showApp();
+
+function adminHeader() {
+  return { 'Authorization': 'Bearer ' + adminJwt, 'Content-Type': 'application/json' };
+}
+
+// ── Login ──
+async function doAdminLogin() {
+  const email    = document.getElementById('aEmail').value.trim();
+  const password = document.getElementById('aPass').value;
+  const errEl    = document.getElementById('loginErr');
+  errEl.style.display = 'none';
+  if (!email || !password) { errEl.textContent = 'Completa todos los campos'; errEl.style.display = 'block'; return; }
+
+  const btn = document.getElementById('btnLogin');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Verificando…';
+  try {
+    const res  = await fetch(BACKEND + '/api/admin/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email,password}) });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.error || 'Error'; errEl.style.display = 'block'; return; }
+    adminJwt   = data.token;
+    adminEmail = email;
+    localStorage.setItem('central_admin_jwt', adminJwt);
+    showApp();
+  } catch {
+    errEl.textContent = 'No se pudo conectar con el servidor';
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Entrar al panel';
+  }
+}
+
+function showApp() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appScreen').style.display   = 'block';
+  try {
+    const payload = JSON.parse(atob(adminJwt.split('.')[1]));
+    document.getElementById('topEmail').textContent = payload.email || '';
+  } catch {}
+  loadStats();
+  loadTenants(1);
+}
+
+function adminLogout() {
+  localStorage.removeItem('central_admin_jwt');
+  adminJwt = '';
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('appScreen').style.display   = 'none';
+}
+
+// ── Navigation ──
+function showPage(name, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  if (el) el.classList.add('active');
+  if (name === 'dashboard') loadStats();
+  if (name === 'tenants')   loadTenants(currentPage);
+}
+
+// ── Stats ──
+async function loadStats() {
+  try {
+    const res  = await fetch(BACKEND + '/api/admin/stats', { headers: adminHeader() });
+    const data = await res.json();
+    if (res.status === 401) return adminLogout();
+    document.getElementById('st-total').textContent      = data.total ?? '—';
+    document.getElementById('st-activos').textContent    = data.activos ?? '—';
+    document.getElementById('st-suspendidos').textContent= data.suspendidos ?? '—';
+    document.getElementById('st-nuevos').textContent     = data.nuevosEstaSemana ?? '—';
+    document.getElementById('st-convos').textContent     = (data.totalConversaciones ?? '—').toLocaleString?.() ?? data.totalConversaciones;
+    document.getElementById('st-msgs').textContent       = (data.totalMensajes ?? '—').toLocaleString?.() ?? data.totalMensajes;
+    const p = data.porPlan || {};
+    document.getElementById('pc-basic').textContent    = p.basic    ?? 0;
+    document.getElementById('pc-pro').textContent      = p.pro      ?? 0;
+    document.getElementById('pc-business').textContent = p.business ?? 0;
+  } catch {}
+}
+
+// ── Tenants table ──
+function onSearch() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => loadTenants(1), 350);
+}
+
+async function loadTenants(page) {
+  currentPage = page;
+  const search = document.getElementById('searchInput')?.value.trim() || '';
+  const plan   = document.getElementById('filterPlan')?.value || '';
+  const status = document.getElementById('filterStatus')?.value || '';
+  const params = new URLSearchParams({ page, limit: 20 });
+  if (search) params.set('search', search);
+  if (plan)   params.set('plan', plan);
+  if (status) params.set('status', status);
+
+  const body = document.getElementById('tenantsBody');
+  body.innerHTML = '<tr class="loading-row"><td colspan="8">Cargando…</td></tr>';
+
+  try {
+    const res  = await fetch(BACKEND + '/api/admin/tenants?' + params, { headers: adminHeader() });
+    if (res.status === 401) return adminLogout();
+    const data = await res.json();
+
+    document.getElementById('totalCount').textContent = data.total + ' negocios';
+    renderTable(data.tenants || []);
+    renderPagination(data.total, data.page, data.limit);
+  } catch {
+    body.innerHTML = '<tr class="loading-row"><td colspan="8">Error al cargar</td></tr>';
+  }
+}
+
+function renderTable(tenants) {
+  const body = document.getElementById('tenantsBody');
+  if (!tenants.length) {
+    body.innerHTML = '<tr class="loading-row"><td colspan="8">Sin resultados</td></tr>';
+    return;
+  }
+  body.innerHTML = tenants.map(t => `
+    <tr>
+      <td>
+        <div style="font-weight:600;">${esc(t.business_name)}</div>
+        <div style="font-size:11px;color:var(--text2);">${esc(t.full_name || '')}</div>
+      </td>
+      <td style="color:var(--text2);font-size:12px;">${esc(t.email)}</td>
+      <td><span class="badge badge-${t.plan}">${planLabel(t.plan)}</span></td>
+      <td style="font-size:12px;color:var(--text2);">${esc(t.country || '—')}</td>
+      <td><span class="badge ${t.whatsapp_connected ? 'badge-yes' : 'badge-no'}">${t.whatsapp_connected ? '✓ Sí' : '✗ No'}</span></td>
+      <td style="font-size:12px;color:var(--text2);">${fmtDate(t.created_at)}</td>
+      <td><span class="badge ${t.active ? 'badge-active' : 'badge-suspended'}">${t.active ? 'Activo' : 'Suspendido'}</span></td>
+      <td>
+        <button class="action-btn" onclick="openDetail('${t.id}')" title="Ver detalle">👁</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function renderPagination(total, page, limit) {
+  const pages  = Math.ceil(total / limit);
+  const bar    = document.getElementById('paginationBar');
+  if (pages <= 1) { bar.innerHTML = ''; return; }
+  let html = `<button class="page-btn" onclick="loadTenants(${page-1})" ${page<=1?'disabled':''}>← Anterior</button>`;
+  const start = Math.max(1, page-2), end = Math.min(pages, page+2);
+  for (let i = start; i <= end; i++) {
+    html += `<button class="page-btn ${i===page?'active':''}" onclick="loadTenants(${i})">${i}</button>`;
+  }
+  html += `<button class="page-btn" onclick="loadTenants(${page+1})" ${page>=pages?'disabled':''}>Siguiente →</button>`;
+  bar.innerHTML = html;
+}
+
+// ── Side panel ──
+async function openDetail(tenantId) {
+  document.getElementById('overlay').classList.add('open');
+  document.getElementById('sidePanel').classList.add('open');
+  document.getElementById('sidePanelContent').innerHTML = '<div style="color:var(--text2);padding:40px 0;text-align:center;">Cargando…</div>';
+
+  try {
+    const res  = await fetch(BACKEND + '/api/admin/tenants/' + tenantId, { headers: adminHeader() });
+    const t    = await res.json();
+    currentTenant = t;
+    renderSidePanel(t);
+  } catch {
+    document.getElementById('sidePanelContent').innerHTML = '<div style="color:var(--red);padding:20px;">Error al cargar</div>';
+  }
+}
+
+function renderSidePanel(t) {
+  const statusBtn = t.active
+    ? `<button class="btn-action danger" onclick="suspendTenant('${t.id}')">⛔ Suspender cuenta</button>`
+    : `<button class="btn-action success" onclick="reactivateTenant('${t.id}')">✅ Reactivar cuenta</button>`;
+
+  document.getElementById('sidePanelContent').innerHTML = `
+    <div class="sp-title">${esc(t.business_name)}</div>
+    <div class="sp-sub">${esc(t.email)}</div>
+
+    <div class="sp-section">
+      <div class="sp-section-title">Información del negocio</div>
+      <div class="sp-row"><span class="sp-row-label">Dueño</span><span class="sp-row-value">${esc(t.full_name || '—')}</span></div>
+      <div class="sp-row"><span class="sp-row-label">País</span><span class="sp-row-value">${esc(t.country || '—')}</span></div>
+      <div class="sp-row"><span class="sp-row-label">WhatsApp negocio</span><span class="sp-row-value">${esc(t.whatsapp_number || '—')}</span></div>
+      <div class="sp-row"><span class="sp-row-label">Registro</span><span class="sp-row-value">${fmtDate(t.created_at)}</span></div>
+      <div class="sp-row"><span class="sp-row-label">Estado</span><span class="sp-row-value"><span class="badge ${t.active?'badge-active':'badge-suspended'}">${t.active?'Activo':'Suspendido'}</span></span></div>
+    </div>
+
+    <div class="sp-section">
+      <div class="sp-section-title">Canal WhatsApp API</div>
+      <div class="sp-row"><span class="sp-row-label">Conectado</span><span class="sp-row-value"><span class="badge ${t.whatsapp_connected?'badge-yes':'badge-no'}">${t.whatsapp_connected?'✓ Sí':'✗ No'}</span></span></div>
+      <div class="sp-row"><span class="sp-row-label">Phone Number ID</span><span class="sp-row-value" style="font-family:monospace;font-size:11.5px;">${esc(t.whatsapp_phone_id_masked || '—')}</span></div>
+    </div>
+
+    <div class="sp-section">
+      <div class="sp-section-title">Actividad</div>
+      <div class="sp-row"><span class="sp-row-label">Conversaciones</span><span class="sp-row-value">${t.total_convos || 0}</span></div>
+      <div class="sp-row"><span class="sp-row-label">Mensajes</span><span class="sp-row-value">${t.total_msgs || 0}</span></div>
+    </div>
+
+    <div class="sp-section">
+      <div class="sp-section-title">Plan actual: <span class="badge badge-${t.plan}" style="margin-left:4px;">${planLabel(t.plan)}</span></div>
+      <div class="plan-select-row">
+        <select id="planSelector">
+          <option value="basic"    ${t.plan==='basic'   ?'selected':''}>Basic — Gratis</option>
+          <option value="pro"      ${t.plan==='pro'     ?'selected':''}>Pro — $29/mes</option>
+          <option value="business" ${t.plan==='business'?'selected':''}>Business — $59/mes</option>
+        </select>
+        <button onclick="changePlan('${t.id}')">Cambiar</button>
+      </div>
+    </div>
+
+    <div class="sp-actions">
+      ${statusBtn}
+      <button class="btn-action danger" onclick="confirmDelete('${t.id}','${esc(t.business_name)}')">🗑 Eliminar cuenta</button>
+    </div>
+  `;
+}
+
+function closePanel() {
+  document.getElementById('overlay').classList.remove('open');
+  document.getElementById('sidePanel').classList.remove('open');
+  currentTenant = null;
+}
+
+// ── Actions ──
+async function changePlan(tenantId) {
+  const plan = document.getElementById('planSelector').value;
+  try {
+    const res = await fetch(BACKEND + '/api/admin/tenants/' + tenantId + '/plan', {
+      method: 'PUT', headers: adminHeader(), body: JSON.stringify({ plan }),
+    });
+    if (!res.ok) throw new Error();
+    showToast('Plan actualizado a ' + planLabel(plan) + ' ✓');
+    loadTenants(currentPage);
+    if (currentTenant) { currentTenant.plan = plan; renderSidePanel(currentTenant); }
+  } catch {
+    showToast('Error al cambiar plan');
+  }
+}
+
+async function suspendTenant(tenantId) {
+  showConfirm('¿Suspender esta cuenta?', 'El negocio perderá acceso a CENTRAL inmediatamente.', async () => {
+    await setStatus(tenantId, false);
+  });
+}
+async function reactivateTenant(tenantId) {
+  await setStatus(tenantId, true);
+}
+async function setStatus(tenantId, active) {
+  try {
+    const res = await fetch(BACKEND + '/api/admin/tenants/' + tenantId + '/status', {
+      method: 'PUT', headers: adminHeader(), body: JSON.stringify({ active }),
+    });
+    if (!res.ok) throw new Error();
+    showToast(active ? 'Cuenta reactivada ✓' : 'Cuenta suspendida ✓');
+    loadTenants(currentPage);
+    if (currentTenant) { currentTenant.active = active; renderSidePanel(currentTenant); }
+  } catch {
+    showToast('Error al cambiar estado');
+  }
+}
+
+function confirmDelete(tenantId, name) {
+  showConfirm(
+    '⚠️ ¿Eliminar "' + name + '"?',
+    'Esta acción borrará permanentemente el negocio, todas sus conversaciones y mensajes. No se puede deshacer.',
+    async () => {
+      try {
+        const res = await fetch(BACKEND + '/api/admin/tenants/' + tenantId, {
+          method: 'DELETE', headers: { ...adminHeader(), 'X-Confirm-Delete': 'true' },
+        });
+        if (!res.ok) throw new Error();
+        showToast('Negocio eliminado ✓');
+        closePanel();
+        loadTenants(1);
+        loadStats();
+      } catch {
+        showToast('Error al eliminar');
+      }
+    }
+  );
+}
+
+// ── Confirm dialog ──
+let confirmCallback = null;
+function showConfirm(title, msg, cb) {
+  document.getElementById('confirmTitle').textContent = title;
+  document.getElementById('confirmMsg').textContent   = msg;
+  document.getElementById('confirmOverlay').classList.add('open');
+  confirmCallback = cb;
+  document.getElementById('confirmOkBtn').onclick = () => { closeConfirm(); if (confirmCallback) confirmCallback(); };
+}
+function closeConfirm() {
+  document.getElementById('confirmOverlay').classList.remove('open');
+  confirmCallback = null;
+}
+
+// ── Toast ──
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+// ── Helpers ──
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function planLabel(p) { return {basic:'Basic',pro:'Pro',business:'Business'}[p] || p; }
+function fmtDate(d) { if (!d) return '—'; try { return new Date(d).toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'}); } catch { return '—'; } }
+
+// Enter key en login
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.getElementById('loginScreen').style.display !== 'none') doAdminLogin();
+});
+</script>
+</body>
+</html>
