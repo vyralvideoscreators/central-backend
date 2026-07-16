@@ -112,6 +112,17 @@ body {
 .field-error { font-size: 11px; color: var(--red); margin-top: 4px; display: none; }
 .field-error.show { display: block; }
 
+/* ── Password wrapper ── */
+.pw-wrap { position: relative; }
+.pw-wrap .form-input { padding-right: 40px; }
+.pw-toggle {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer; color: var(--text3);
+  padding: 4px; display: flex; align-items: center;
+  transition: color .2s;
+}
+.pw-toggle:hover { color: var(--text2); }
+
 /* ── Password strength ── */
 .pw-strength { margin-top: 6px; }
 .pw-bar { height: 3px; border-radius: 2px; background: var(--border); margin-bottom: 4px; overflow: hidden; }
@@ -175,12 +186,40 @@ body {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Login panel extras ── */
-.forgot-link { display: block; text-align: right; font-size: 11.5px; color: var(--accent2); text-decoration: none; margin-top: -6px; margin-bottom: 10px; }
-.login-logo { display: none; text-align: center; margin-bottom: 20px; }
+.forgot-link {
+  display: block; text-align: right; font-size: 11.5px;
+  color: var(--accent2); text-decoration: none;
+  margin-top: -6px; margin-bottom: 10px; cursor: pointer;
+  background: none; border: none; width: 100%;
+}
+.forgot-link:hover { text-decoration: underline; }
 
 /* ── Footer ── */
 .footer-txt { text-align: center; font-size: 11px; color: var(--text3); margin-top: 20px; }
 .footer-txt a { color: var(--accent2); text-decoration: none; }
+
+/* ── Modal recuperación ── */
+.modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+  z-index: 999; align-items: center; justify-content: center;
+}
+.modal-overlay.show { display: flex; }
+.modal-box {
+  background: var(--card); border: 1px solid var(--border2);
+  border-radius: 20px; padding: 32px 28px;
+  width: 100%; max-width: 400px;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+  animation: fadeIn .2s ease;
+}
+.modal-title { font-size: 16px; font-weight: 800; margin-bottom: 6px; }
+.modal-sub   { font-size: 12.5px; color: var(--text2); margin-bottom: 20px; line-height: 1.5; }
+.modal-close {
+  position: absolute; top: 16px; right: 16px;
+  background: none; border: none; color: var(--text2);
+  font-size: 20px; cursor: pointer; line-height: 1;
+}
+.modal-box-inner { position: relative; }
 
 /* ── Responsive mobile ── */
 @media (max-width: 680px) {
@@ -189,7 +228,6 @@ body {
   .divider { display: none; }
   .mobile-tabs { display: flex; }
   .panel { animation: fadeIn .25s ease; }
-  .login-logo { display: block; }
   .hide-mobile { display: none !important; }
 }
 @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
@@ -205,11 +243,45 @@ body {
 
 <!-- Mobile tabs -->
 <div class="mobile-tabs" id="mobileTabs">
-  <div class="mobile-tab active" id="mtabReg"   onclick="mobileTab('reg')">Crear cuenta</div>
-  <div class="mobile-tab"        id="mtabLogin" onclick="mobileTab('login')">Iniciar sesión</div>
+  <div class="mobile-tab active" id="mtabLogin" onclick="mobileTab('login')">Iniciar sesión</div>
+  <div class="mobile-tab"        id="mtabReg"   onclick="mobileTab('reg')">Crear cuenta</div>
 </div>
 
 <div class="main-wrap">
+
+  <!-- ── LOGIN ── -->
+  <div class="panel" id="panelLogin">
+    <div class="panel-title">Iniciar sesión</div>
+    <div class="panel-sub">Accede a tu panel de negocios</div>
+
+    <div id="loginErr" class="msg-box msg-error"></div>
+    <div id="loginOk"  class="msg-box msg-ok"></div>
+
+    <div class="form-group">
+      <label class="form-label">Correo electrónico</label>
+      <input class="form-input" id="lEmail" type="email" placeholder="tu@correo.com" autocomplete="email">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Contraseña</label>
+      <div class="pw-wrap">
+        <input class="form-input" id="lPass" type="password" placeholder="••••••••" autocomplete="current-password">
+        <button type="button" class="pw-toggle" onclick="togglePw('lPass',this)" tabindex="-1">
+          <svg id="lPassIcon" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <button type="button" class="forgot-link" onclick="openForgot()">¿Olvidaste tu contraseña?</button>
+
+    <button class="btn-primary" id="btnLogin" onclick="doLogin()">Entrar a CENTRAL</button>
+
+    <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border);text-align:center;font-size:12px;color:var(--text2);">
+      ¿No tienes cuenta? <a href="#" onclick="mobileTab('reg');return false;" style="color:var(--accent2);">Créala gratis</a>
+    </div>
+  </div>
+
+  <div class="divider"></div>
 
   <!-- ── REGISTRO ── -->
   <div class="panel" id="panelReg">
@@ -239,7 +311,12 @@ body {
 
     <div class="form-group">
       <label class="form-label">Contraseña</label>
-      <input class="form-input" id="rPass" type="password" placeholder="Mínimo 8 caracteres" autocomplete="new-password" oninput="checkStrength(this.value)">
+      <div class="pw-wrap">
+        <input class="form-input" id="rPass" type="password" placeholder="Mínimo 8 caracteres" autocomplete="new-password" oninput="checkStrength(this.value)">
+        <button type="button" class="pw-toggle" onclick="togglePw('rPass',this)" tabindex="-1">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
       <div class="pw-strength">
         <div class="pw-bar"><div class="pw-bar-fill" id="pwFill"></div></div>
         <div class="pw-label" id="pwLabel">Escribe una contraseña</div>
@@ -249,7 +326,12 @@ body {
 
     <div class="form-group">
       <label class="form-label">Confirmar contraseña</label>
-      <input class="form-input" id="rPass2" type="password" placeholder="Repite la contraseña" autocomplete="new-password">
+      <div class="pw-wrap">
+        <input class="form-input" id="rPass2" type="password" placeholder="Repite la contraseña" autocomplete="new-password">
+        <button type="button" class="pw-toggle" onclick="togglePw('rPass2',this)" tabindex="-1">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
       <div class="field-error" id="errPass2"></div>
     </div>
 
@@ -317,55 +399,66 @@ body {
     <button class="btn-primary" id="btnReg" onclick="doRegister()">Crear cuenta gratis</button>
   </div>
 
-  <div class="divider"></div>
-
-  <!-- ── LOGIN ── -->
-  <div class="panel" id="panelLogin">
-    <div class="login-logo hide-mobile" style="display:none"></div>
-    <div class="panel-title">Iniciar sesión</div>
-    <div class="panel-sub">Accede a tu panel de negocios</div>
-
-    <div id="loginErr" class="msg-box msg-error"></div>
-    <div id="loginOk"  class="msg-box msg-ok"></div>
-
-    <div class="form-group">
-      <label class="form-label">Correo electrónico</label>
-      <input class="form-input" id="lEmail" type="email" placeholder="tu@correo.com" autocomplete="email">
-    </div>
-
-    <div class="form-group">
-      <label class="form-label">Contraseña</label>
-      <input class="form-input" id="lPass" type="password" placeholder="••••••••" autocomplete="current-password">
-    </div>
-
-    <a href="#" class="forgot-link">¿Olvidaste tu contraseña?</a>
-
-    <button class="btn-primary" id="btnLogin" onclick="doLogin()">Entrar a CENTRAL</button>
-
-    <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border);text-align:center;font-size:12px;color:var(--text2);">
-      ¿No tienes cuenta? <a href="#" onclick="mobileTab('reg');return false;" style="color:var(--accent2);">Créala gratis</a>
-    </div>
-  </div>
-
 </div>
 
 <div class="footer-txt">© 2025 CENTRAL · <a href="#">Términos</a> · <a href="#">Privacidad</a></div>
+
+<!-- ── MODAL RECUPERAR CONTRASEÑA ── -->
+<div class="modal-overlay" id="forgotModal">
+  <div class="modal-box">
+    <div class="modal-box-inner">
+      <button class="modal-close" onclick="closeForgot()">×</button>
+
+      <!-- Paso 1: pedir correo -->
+      <div id="forgotStep1">
+        <div class="modal-title">Recuperar contraseña</div>
+        <div class="modal-sub">Ingresa tu correo y te enviaremos un enlace para restablecer tu contraseña.</div>
+        <div id="forgotErr" class="msg-box msg-error"></div>
+        <div id="forgotOk"  class="msg-box msg-ok"></div>
+        <div class="form-group">
+          <label class="form-label">Correo electrónico</label>
+          <input class="form-input" id="forgotEmail" type="email" placeholder="tu@correo.com">
+        </div>
+        <button class="btn-primary" id="btnForgot" onclick="doForgot()">Enviar enlace</button>
+      </div>
+
+      <!-- Paso 2: confirmación -->
+      <div id="forgotStep2" style="display:none;text-align:center;">
+        <div style="font-size:40px;margin-bottom:16px;">📧</div>
+        <div class="modal-title">Revisa tu correo</div>
+        <div class="modal-sub" id="forgotConfirmText"></div>
+        <button class="btn-primary" onclick="closeForgot()" style="margin-top:8px;">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
 const BACKEND = 'https://central-backend-production.up.railway.app';
 const APP_URL = 'central-mvp-v63 (1) - copia.html';
 
-// Si ya hay JWT válido, ir directo a la app
 if (localStorage.getItem('central_jwt')) window.location.href = APP_URL;
+
+// En móvil mostrar solo login al cargar
+if (window.innerWidth <= 680) {
+  document.addEventListener('DOMContentLoaded', () => mobileTab('login'));
+}
 
 let selectedPlan = 'basic';
 
 // ── Mobile tabs ──
+function isMobile() { return window.innerWidth <= 680; }
+
 function mobileTab(tab) {
   document.getElementById('mtabReg').classList.toggle('active', tab === 'reg');
   document.getElementById('mtabLogin').classList.toggle('active', tab === 'login');
-  document.getElementById('panelReg').style.display   = tab === 'reg'   ? '' : 'none';
-  document.getElementById('panelLogin').style.display = tab === 'login' ? '' : 'none';
+  if (isMobile()) {
+    document.getElementById('panelReg').style.display   = tab === 'reg'   ? '' : 'none';
+    document.getElementById('panelLogin').style.display = tab === 'login' ? '' : 'none';
+  } else {
+    document.getElementById('panelReg').style.display   = '';
+    document.getElementById('panelLogin').style.display = '';
+  }
 }
 
 // ── Plan selector ──
@@ -375,6 +468,16 @@ function selectPlan(plan) {
     const el = document.getElementById('plan' + p.charAt(0).toUpperCase() + p.slice(1));
     if (el) el.classList.toggle('selected', p === plan);
   });
+}
+
+// ── Toggle password visibility ──
+function togglePw(inputId, btn) {
+  const inp = document.getElementById(inputId);
+  const showing = inp.type === 'text';
+  inp.type = showing ? 'password' : 'text';
+  btn.innerHTML = showing
+    ? '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/><circle cx="12" cy="12" r="3"/></svg>'
+    : '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>';
 }
 
 // ── Password strength ──
@@ -498,13 +601,55 @@ function saveSession(data) {
   localStorage.setItem('central_tenant', JSON.stringify(data.tenant));
 }
 
+// ── Recuperar contraseña ──
+function openForgot() {
+  document.getElementById('forgotStep1').style.display = '';
+  document.getElementById('forgotStep2').style.display = 'none';
+  document.getElementById('forgotEmail').value = document.getElementById('lEmail').value || '';
+  document.getElementById('forgotErr').style.display = 'none';
+  document.getElementById('forgotOk').style.display  = 'none';
+  document.getElementById('forgotModal').classList.add('show');
+  setTimeout(() => document.getElementById('forgotEmail').focus(), 100);
+}
+function closeForgot() {
+  document.getElementById('forgotModal').classList.remove('show');
+}
+document.getElementById('forgotModal').addEventListener('click', function(e) {
+  if (e.target === this) closeForgot();
+});
+
+async function doForgot() {
+  const email = document.getElementById('forgotEmail').value.trim();
+  document.getElementById('forgotErr').style.display = 'none';
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    showMsg('forgotErr', 'Ingresa un correo válido');
+    return;
+  }
+  setLoading('btnForgot', true, 'Enviar enlace');
+  try {
+    const res  = await fetch(BACKEND + '/api/tenant/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    document.getElementById('forgotStep1').style.display = 'none';
+    document.getElementById('forgotStep2').style.display = '';
+    document.getElementById('forgotConfirmText').textContent =
+      'Si el correo ' + email + ' está registrado, recibirás un enlace para restablecer tu contraseña en los próximos minutos.';
+  } catch {
+    showMsg('forgotErr', 'No se pudo conectar con el servidor');
+  } finally {
+    setLoading('btnForgot', false, 'Enviar enlace');
+  }
+}
+
 // ── Enter key ──
 document.addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
-  const regVisible = !document.getElementById('panelReg').style.display || document.getElementById('panelReg').style.display !== 'none';
+  if (document.getElementById('forgotModal').classList.contains('show')) { doForgot(); return; }
   const focused = document.activeElement;
-  if (focused && (focused.closest('#panelLogin'))) doLogin();
-  else if (regVisible) doRegister();
+  if (focused && focused.closest('#panelLogin')) doLogin();
+  else doRegister();
 });
 </script>
 </body>
