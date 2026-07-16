@@ -2168,9 +2168,9 @@
             </div>
           </div>
         </div>
-        <div class="search-box">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
-          Buscar conversación...
+        <div class="search-box" style="padding:0;">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="margin:0 8px 0 12px;flex-shrink:0;"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
+          <input id="convoSearchInput" type="text" placeholder="Buscar conversación..." oninput="filterConvoSearch(this.value)" style="flex:1;background:transparent;border:none;outline:none;color:var(--text1);font-size:12.5px;padding:9px 10px 9px 0;">
         </div>
         <div class="convo-list" id="convoList">
 
@@ -4074,6 +4074,27 @@ function selectConvo(el, key) {
   loadChat(key);
   currentDraft = null;
   showConvoHistory(key);
+}
+
+let convoSearchQuery = '';
+
+function filterConvoSearch(q) {
+  convoSearchQuery = q.toLowerCase().trim();
+  applyConvoFilters();
+}
+
+function applyConvoFilters() {
+  const activeTab = document.querySelector('.filter-tab.active');
+  const type = activeTab ? (activeTab.dataset.filter || 'all') : 'all';
+  const list = document.getElementById('convoList');
+  const items = [...list.querySelectorAll('.convo-item')];
+  items.forEach(item => {
+    const matchPlatform = (type === 'all' || item.dataset.platform === type);
+    const name = (item.querySelector('.convo-name')?.textContent || '').toLowerCase();
+    const preview = (item.querySelector('.convo-preview')?.textContent || '').toLowerCase();
+    const matchSearch = !convoSearchQuery || name.includes(convoSearchQuery) || preview.includes(convoSearchQuery);
+    item.style.display = (matchPlatform && matchSearch) ? '' : 'none';
+  });
 }
 
 function filterConvos(type, el) {
@@ -9885,15 +9906,7 @@ function renderInboxList() {
     `;
     list.appendChild(div);
   });
-  // Re-apply active filter without disturbing sort
-  const activeTab = document.querySelector('.filter-tab.active');
-  if (activeTab) {
-    const type = activeTab.dataset.filter || 'all';
-    const items = [...list.querySelectorAll('.convo-item')];
-    items.forEach(item => {
-      item.style.display = (type === 'all' || item.dataset.platform === type) ? '' : 'none';
-    });
-  }
+  applyConvoFilters();
 }
 
 // ─────────────────────────────────────────────────────────────
