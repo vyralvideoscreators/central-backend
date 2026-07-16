@@ -6891,32 +6891,82 @@ const settingsPanels = {
     <div class="sc-title">${T('set_canales')}</div>
     <div class="sc-sub">Conecta tus canales de mensajería</div>
 
+    <!-- WhatsApp card -->
     <div class="s-card" id="canalWaCard">
-      <div class="s-card-title" style="display:flex;align-items:center;justify-content:space-between;">
+      <div class="s-card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
         <span>📱 WhatsApp Business API</span>
         <span id="canalWaStatus" style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;">
-          <span id="canalWaDot" style="width:8px;height:8px;border-radius:50%;background:var(--text3);flex-shrink:0;"></span>
+          <span id="canalWaDot" style="width:8px;height:8px;border-radius:50%;background:var(--text3);flex-shrink:0;transition:background .3s;"></span>
           <span id="canalWaStatusTxt">Cargando…</span>
         </span>
       </div>
 
-      <div id="canalWaPhoneRow" style="margin:14px 0 6px;">
-        <div class="form-label" style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:5px;text-transform:uppercase;letter-spacing:.3px;">Phone Number ID</div>
-        <input id="canalPhoneId" class="s-input" placeholder="Ej: 1237197519470282" style="width:100%;">
-      </div>
-      <div style="margin-bottom:14px;">
-        <div class="form-label" style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:5px;text-transform:uppercase;letter-spacing:.3px;">Token de acceso</div>
-        <input id="canalWaToken" class="s-input" type="password" placeholder="Ej: EAAxxxxxxx…" style="width:100%;">
+      <!-- Info cuando está conectado -->
+      <div id="canalWaConnectedInfo" style="display:none;margin-top:12px;">
+        <div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:10px;padding:12px 14px;margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px;">Número conectado</div>
+          <div id="canalWaPhoneName" style="font-size:15px;font-weight:700;color:var(--green);margin-bottom:2px;"></div>
+          <div id="canalWaPhoneMasked" style="font-size:12px;color:var(--text2);font-family:monospace;"></div>
+        </div>
+        <button class="btn-ghost" style="font-size:12px;width:100%;" onclick="canalShowEditForm()">🔧 Cambiar credenciales</button>
       </div>
 
-      <div id="canalWaTestResult" style="display:none;padding:9px 12px;border-radius:8px;font-size:12.5px;margin-bottom:12px;"></div>
-
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn-ghost" style="font-size:12px;" onclick="testWhatsAppConnection()">Probar conexión</button>
-        <button class="btn-primary" style="font-size:12px;" onclick="saveWhatsAppCredentials()">Guardar y conectar</button>
+      <!-- Formulario de credenciales (visible cuando no conectado o editando) -->
+      <div id="canalWaForm" style="margin-top:14px;">
+        <div style="margin-bottom:10px;">
+          <div class="form-label" style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:5px;text-transform:uppercase;letter-spacing:.3px;">Phone Number ID</div>
+          <input id="canalPhoneId" class="s-input" placeholder="Ej: 1237197519470282" style="width:100%;">
+        </div>
+        <div style="margin-bottom:14px;">
+          <div class="form-label" style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:5px;text-transform:uppercase;letter-spacing:.3px;">Token de acceso</div>
+          <input id="canalWaToken" class="s-input" type="password" placeholder="Ej: EAAxxxxxxx…" style="width:100%;">
+        </div>
+        <div id="canalWaTestResult" style="display:none;padding:9px 12px;border-radius:8px;font-size:12.5px;margin-bottom:12px;"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn-ghost" style="font-size:12px;" onclick="testWhatsAppConnection()">Probar conexión</button>
+          <button class="btn-primary" style="font-size:12px;" onclick="saveWhatsAppCredentials()">Guardar y conectar</button>
+        </div>
       </div>
     </div>
 
+    <!-- Guía colapsable -->
+    <div class="s-card" style="padding:0;overflow:hidden;">
+      <div onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.querySelector('.guide-arrow').style.transform=this.nextElementSibling.style.display==='block'?'rotate(180deg)':'rotate(0deg)'"
+        style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;cursor:pointer;">
+        <span style="font-size:13px;font-weight:600;">📖 ¿Cómo obtener mis credenciales de Meta?</span>
+        <span class="guide-arrow" style="color:var(--text2);transition:transform .2s;">▼</span>
+      </div>
+      <div style="display:none;padding:0 16px 16px;border-top:1px solid var(--border);">
+        <div style="display:flex;flex-direction:column;gap:14px;margin-top:14px;">
+          <div style="display:flex;gap:12px;align-items:flex-start;">
+            <div style="width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;">1</div>
+            <div>
+              <div style="font-size:13px;font-weight:600;margin-bottom:3px;">Crear una app en Meta for Developers</div>
+              <div style="font-size:12px;color:var(--text2);line-height:1.5;">Ve a <strong>developers.facebook.com</strong> → "Mis apps" → "Crear app" → Selecciona tipo <strong>"Negocios"</strong> → Completa el nombre y correo.</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:flex-start;">
+            <div style="width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;">2</div>
+            <div>
+              <div style="font-size:13px;font-weight:600;margin-bottom:3px;">Agregar WhatsApp como producto</div>
+              <div style="font-size:12px;color:var(--text2);line-height:1.5;">Dentro de tu app → "Agregar productos" → busca <strong>WhatsApp</strong> → clic en "Configurar" → conecta tu cuenta de WhatsApp Business.</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:flex-start;">
+            <div style="width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;">3</div>
+            <div>
+              <div style="font-size:13px;font-weight:600;margin-bottom:3px;">Copiar el Phone Number ID y el Token</div>
+              <div style="font-size:12px;color:var(--text2);line-height:1.5;">Ve a <strong>WhatsApp → Configuración de API</strong> dentro de tu app. Ahí verás el <strong>Phone Number ID</strong> y puedes generar un <strong>Token de acceso permanente</strong> desde Meta Business Suite → Configuración → Usuarios del sistema.</div>
+            </div>
+          </div>
+          <div style="background:rgba(124,92,252,.08);border:1px solid rgba(124,92,252,.2);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--text2);line-height:1.5;">
+            💡 <strong>Tip:</strong> El token temporal expira en 24h. Para producción, genera un token permanente desde <strong>Meta Business Suite → Usuarios del sistema → Agregar activos</strong>.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Instagram -->
     <div class="s-card" style="opacity:.5;pointer-events:none;">
       <div class="s-card-title" style="display:flex;align-items:center;justify-content:space-between;">
         <span>📸 Instagram DM</span>
@@ -7483,21 +7533,51 @@ async function loadCanalWaStatus() {
   try {
     const res  = await fetch(BACKEND_URL + '/api/tenant/profile', { headers: apiAuthHeader() });
     const data = await res.json();
-    const dot  = document.getElementById('canalWaDot');
-    const txt  = document.getElementById('canalWaStatusTxt');
-    const inp  = document.getElementById('canalPhoneId');
+    const dot         = document.getElementById('canalWaDot');
+    const txt         = document.getElementById('canalWaStatusTxt');
+    const connectedEl = document.getElementById('canalWaConnectedInfo');
+    const formEl      = document.getElementById('canalWaForm');
     if (!dot || !txt) return;
+
     if (data.whatsapp_connected) {
+      // Indicador verde
       dot.style.background = 'var(--green)';
-      txt.textContent = 'Conectado';
-      txt.style.color = 'var(--green)';
-      if (inp) inp.placeholder = data.whatsapp_phone_number_id || '';
+      txt.textContent      = 'Conectado';
+      txt.style.color      = 'var(--green)';
+      // Mostrar info y ocultar formulario
+      if (connectedEl) connectedEl.style.display = 'block';
+      if (formEl)      formEl.style.display      = 'none';
+      // Mostrar phone ID enmascarado
+      const maskedEl = document.getElementById('canalWaPhoneMasked');
+      if (maskedEl) maskedEl.textContent = 'ID: ' + (data.whatsapp_phone_number_id || '');
+      // Intentar obtener nombre del número
+      try {
+        const testRes  = await fetch(BACKEND_URL + '/api/tenant/test-whatsapp', { headers: apiAuthHeader() });
+        const testData = await testRes.json();
+        const nameEl   = document.getElementById('canalWaPhoneName');
+        if (nameEl && testData.success) {
+          nameEl.textContent = testData.verified_name + ' · ' + testData.phone_number;
+        } else if (nameEl) {
+          nameEl.textContent = 'WhatsApp Business conectado';
+        }
+      } catch {}
     } else {
+      // Indicador rojo
       dot.style.background = 'var(--red)';
-      txt.textContent = 'Sin conectar';
-      txt.style.color = 'var(--red)';
+      txt.textContent      = 'Sin conectar';
+      txt.style.color      = 'var(--red)';
+      if (connectedEl) connectedEl.style.display = 'none';
+      if (formEl)      formEl.style.display      = 'block';
     }
   } catch {}
+}
+
+function canalShowEditForm() {
+  const connectedEl = document.getElementById('canalWaConnectedInfo');
+  const formEl      = document.getElementById('canalWaForm');
+  if (connectedEl) connectedEl.style.display = 'none';
+  if (formEl)      formEl.style.display      = 'block';
+  document.getElementById('canalPhoneId')?.focus();
 }
 
 async function saveWhatsAppCredentials() {
@@ -7515,6 +7595,9 @@ async function saveWhatsAppCredentials() {
     const data = await res.json();
     if (!res.ok) { showToast('⚠ ' + (data.error || 'Error al guardar')); return; }
     showToast('✓ WhatsApp conectado correctamente');
+    // Limpiar campos por seguridad
+    const ti = document.getElementById('canalWaToken');
+    if (ti) ti.value = '';
     loadCanalWaStatus();
   } catch {
     showToast('⚠ No se pudo conectar con el backend');
@@ -9546,7 +9629,7 @@ function logout() {
   try { localStorage.removeItem('central_auth'); } catch(e) {}
   try { localStorage.removeItem('central_jwt'); } catch(e) {}
   try { localStorage.removeItem('central_tenant'); } catch(e) {}
-  window.location.href = 'central-registro.html';
+  window.location.href = '/central-registro.html';
 }
 
 function saveProfileSettings() {
