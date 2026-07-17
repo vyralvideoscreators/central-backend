@@ -16,7 +16,6 @@ const bcrypt     = require('bcrypt');
 const jwt        = require('jsonwebtoken');
 const Stripe     = require('stripe');
 const crypto     = require('crypto');
-const nodemailer = require('nodemailer');
 
 const app = express();
 app.use(cors());
@@ -629,13 +628,32 @@ app.post('/api/tenant/login', async (req, res) => {
   }
 });
 
-// ── Email transporter ──
-const emailTransporter = process.env.SMTP_USER ? nodemailer.createTransport({
-  host:   process.env.SMTP_HOST || 'smtp.gmail.com',
-  port:   parseInt(process.env.SMTP_PORT || '465'),
-  secure: parseInt(process.env.SMTP_PORT || '465') === 465,
-  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-}) : null;
+// ── Email via Resend ──
+async function sendResetEmail(to, resetUrl) {
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: 'CENTRAL <onboarding@resend.dev>',
+      to: [to],
+      subject: 'Restablecer contraseña — CENTRAL',
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#0d0d14;color:#e8e8f0;border-radius:16px;">
+          <h2 style="color:#a78bfa;margin-bottom:8px;">Restablecer contraseña</h2>
+          <p style="color:#9999bb;margin-bottom:24px;">Haz clic en el botón para crear una nueva contraseña. El enlace expira en 1 hora.</p>
+          <a href="${resetUrl}" style="display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#7c5cfc,#a78bfa);color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Restablecer contraseña</a>
+          <p style="color:#5555aa;font-size:12px;margin-top:24px;">Si no solicitaste esto, ignora este correo.</p>
+        </div>`,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Resend error: ${err}`);
+  }
+}
 
 // ── Forgot password ──
 app.post('/api/tenant/forgot-password', async (req, res) => {
@@ -649,22 +667,11 @@ app.post('/api/tenant/forgot-password', async (req, res) => {
       const token   = crypto.randomBytes(32).toString('hex');
       const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
       await pool.query('UPDATE tenants SET reset_token=$1, reset_token_expires=$2 WHERE id=$3', [token, expires, rows[0].id]);
-      if (emailTransporter) {
-        const resetUrl = `${process.env.APP_URL || 'https://central-backend-production.up.railway.app'}/reset-password.html?token=${token}`;
-        await emailTransporter.sendMail({
-          from: `"CENTRAL" <${process.env.SMTP_USER}>`,
-          to:   email,
-          subject: 'Restablecer contraseña — CENTRAL',
-          html: `
-            <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#0d0d14;color:#e8e8f0;border-radius:16px;">
-              <h2 style="color:#a78bfa;margin-bottom:8px;">Restablecer contraseña</h2>
-              <p style="color:#9999bb;margin-bottom:24px;">Haz clic en el botón para crear una nueva contraseña. El enlace expira en 1 hora.</p>
-              <a href="${resetUrl}" style="display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#7c5cfc,#a78bfa);color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Restablecer contraseña</a>
-              <p style="color:#5555aa;font-size:12px;margin-top:24px;">Si no solicitaste esto, ignora este correo.</p>
-            </div>`,
-        });
+      const resetUrl = `${process.env.APP_URL || 'https://central-backend-production.up.railway.app'}/reset-password.html?token=${token}`;
+      if (process.env.RESEND_API_KEY) {
+        await sendResetEmail(email, resetUrl);
       } else {
-        console.log(`[RESET] Token para ${email}: ${token}`);
+        console.log(`[RESET] Token para ${email}: ${resetUrl}`);
       }
     }
     res.json({ success: true });
