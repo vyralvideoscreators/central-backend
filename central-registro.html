@@ -31,6 +31,7 @@ body {
   align-items: center;
   justify-content: center;
   padding: 24px 16px;
+  width: 100%;
 }
 
 /* ── Logo ── */
@@ -53,11 +54,17 @@ body {
 /* ── Layout desktop ── */
 .main-wrap {
   width: 100%;
-  max-width: 900px;
-  display: grid;
+  max-width: 960px;
+  align-self: stretch;
+  display: grid !important;
   grid-template-columns: 1fr 1fr;
   gap: 24px;
   align-items: start;
+}
+@media (min-width: 681px) {
+  #panelLogin, #panelReg { display: block !important; }
+  .divider { display: block !important; }
+  .main-wrap { display: grid !important; grid-template-columns: 1fr 1fr !important; }
 }
 .panel {
   background: var(--card);
@@ -247,7 +254,7 @@ body {
   <div class="mobile-tab"        id="mtabReg"   onclick="mobileTab('reg')">Crear cuenta</div>
 </div>
 
-<div class="main-wrap">
+<div class="main-wrap" style="display:grid !important;grid-template-columns:1fr 1fr;gap:24px;align-items:start;width:100%;max-width:960px;">
 
   <!-- ── LOGIN ── -->
   <div class="panel" id="panelLogin">
@@ -280,8 +287,6 @@ body {
       ¿No tienes cuenta? <a href="#" onclick="mobileTab('reg');return false;" style="color:var(--accent2);">Créala gratis</a>
     </div>
   </div>
-
-  <div class="divider"></div>
 
   <!-- ── REGISTRO ── -->
   <div class="panel" id="panelReg">
