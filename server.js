@@ -266,6 +266,7 @@ wss.on('connection', (ws) => {
   ws.on('message', async (raw) => {
     try {
       const msg = JSON.parse(raw.toString());
+      if (msg.type === 'ping') return;
       if (msg.type === 'auth') {
         try {
           const decoded = jwt.verify(msg.token, JWT_SECRET);
