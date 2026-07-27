@@ -9970,12 +9970,6 @@ async function loadRealConversations() {
       return;
     }
 
-    ws.onopen = () => {
-      console.log('🔌 Conectado al backend real en tiempo real');
-      const token = getJwt();
-      if (token) ws.send(JSON.stringify({ type: 'auth', token }));
-    };
-
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -10039,8 +10033,18 @@ async function loadRealConversations() {
       }
     };
 
+    let pingInterval = null;
+    ws.onopen = function() {
+      const token = localStorage.getItem('central_jwt');
+      if (token) ws.send(JSON.stringify({ type: 'auth', token }));
+      pingInterval = setInterval(() => {
+        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'ping' }));
+      }, 25000);
+    };
+
     ws.onclose = () => {
       console.log('🔌 Desconectado del backend real — reintentando en 5s...');
+      if (pingInterval) clearInterval(pingInterval);
       setTimeout(connect, 5000);
     };
 
