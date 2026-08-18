@@ -7821,6 +7821,7 @@ function openNewClientModal() {
     channel: 'wa', notes: '',
     grad: 'linear-gradient(135deg,#6c63ff,#a855f7)',
     orders: [], isNew: true, isVip: false, _unsaved: true,
+    createdAt: new Date().toISOString(),
   };
   populateProfileModal(client);
 }
@@ -8320,13 +8321,160 @@ let infPeriod = 'hoy';
 let infCanal = 'todos';
 let infTab = 'ventas';
 
-// simulated data per period
-const infData = {
-  hoy:    { ventas:576,  pedidos:12, entregados:7,  pendientes:5,  cancelados:0, delivery:5, encomiendas:2, newClients:3,  topProducts:[['👟 Zapatilla Runner Pro',8,'$360'],['👗 Vestido Floral',3,'$114'],['👜 Bolso Cuero',1,'$65']], bars:[40,65,90,80,100,70,576], barLabels:['10am','11am','12pm','1pm','2pm','3pm','4pm'], canal:{wa:65,ig:35} },
-  '7dias':{ ventas:2840, pedidos:58, entregados:42, pendientes:12, cancelados:4, delivery:30, encomiendas:8, newClients:11, topProducts:[['👟 Zapatilla Runner Pro',22,'$990'],['👗 Vestido Floral',14,'$532'],['👜 Bolso Cuero',9,'$585'],['👔 Camisa Lino',7,'$175']], bars:[320,480,510,390,620,280,240], barLabels:['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'], canal:{wa:60,ig:40} },
-  mes:    { ventas:11200,pedidos:231,entregados:189,pendientes:28, cancelados:14,delivery:130,encomiendas:40,newClients:38, topProducts:[['👟 Zapatilla Runner Pro',82,'$3690'],['👗 Vestido Floral',54,'$2052'],['👜 Bolso Cuero',31,'$2015'],['👔 Camisa Lino',28,'$700'],['👖 Jean Skinny',22,'$616']], bars:[1100,980,1350,1200,900,1450,820,1100,980,1320], barLabels:['1','4','7','10','13','16','19','22','25','28'], canal:{wa:58,ig:42} },
-  año:    { ventas:98000,pedidos:2100,entregados:1780,pendientes:190,cancelados:130,delivery:1200,encomiendas:380,newClients:280,topProducts:[['👟 Zapatilla Runner Pro',680,'$30600'],['👗 Vestido Floral',520,'$19760'],['👜 Bolso Cuero',310,'$20150'],['👔 Camisa Lino',280,'$7000'],['👖 Jean Skinny',210,'$5880'],['🧥 Chaqueta',180,'$9000']], bars:[7200,8100,9800,9200,7500,8800,9100,8400,7900,8500,7300,6200], barLabels:['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'], canal:{wa:57,ig:43} },
-};
+// ── Informes: calculados de verdad a partir de pedidos y clientes reales ──
+function moneyToNum(str) { return parseFloat((str + '').replace(/[^0-9.]/g, '')) || 0; }
+
+function getInfPeriodRange(period) {
+  const now = new Date();
+  let start, end = now;
+  if (period === '7dias') {
+    start = new Date(now); start.setDate(start.getDate() - 6); start.setHours(0, 0, 0, 0);
+  } else if (period === 'mes') {
+    start = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else if (period === 'año') {
+    start = new Date(now.getFullYear(), 0, 1);
+  } else if (period === 'personalizado') {
+    const fromVal = document.getElementById('infDateFrom')?.value;
+    const toVal   = document.getElementById('infDateTo')?.value;
+    start = fromVal ? new Date(fromVal + 'T00:00:00') : new Date(now.getFullYear(), now.getMonth(), 1);
+    end   = toVal   ? new Date(toVal + 'T23:59:59')   : now;
+    return { start, end };
+  } else { // 'hoy'
+    start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }
+  return { start, end };
+}
+
+function getInfData(period) {
+  const { start, end } = getInfPeriodRange(period);
+  const periodOrders = orders.filter(o => {
+    if (!o.createdAt) return false;
+    const d = new Date(o.createdAt);
+    return d >= start && d <= end;
+  });
+
+  const ventas      = periodOrders.reduce((s, o) => s + moneyToNum(o.price), 0);
+  const pedidos     = periodOrders.length;
+  const entregados  = periodOrders.filter(o => o.delivery === 'delivered').length;
+  const pendientes  = periodOrders.filter(o => o.delivery === 'to_deliver').length;
+  const cancelados  = 0; // CENTRAL no tiene un estado "cancelado" todavía
+
+  // Tipo de entrega — mismo criterio de palabras clave que usa el resto de la app (ver línea ~5448)
+  let delivery = 0, encomiendas = 0;
+  const encomiendaOrders = [];
+  periodOrders.forEach(o => {
+    const label = (orderExtras[o.id]?.delivery || '').toLowerCase();
+    if (label.includes('encomienda')) { encomiendas++; encomiendaOrders.push(o); }
+    else if (label.includes('motorizado') || label.includes('delivery')) delivery++;
+  });
+
+  // Costo de envío promedio real (solo pedidos con envío registrado)
+  const shippedOrders = periodOrders
+    .map(o => parseFloat((orderExtras[o.id]?.shipping + '') || '') )
+    .filter(v => !isNaN(v) && v > 0);
+  const avgShipping = shippedOrders.length > 0
+    ? shippedOrders.reduce((s, v) => s + v, 0) / shippedOrders.length
+    : 0;
+
+  // Encomiendas: estado real y costo de envío real
+  const encomiendasEntregadas = encomiendaOrders.filter(o => o.delivery === 'delivered').length;
+  const encomiendasEnTransito = encomiendaOrders.filter(o => o.delivery === 'to_deliver').length;
+  const encomiendasIngresos = encomiendaOrders.reduce((s, o) => {
+    const v = parseFloat((orderExtras[o.id]?.shipping + '') || '');
+    return s + (isNaN(v) ? 0 : v);
+  }, 0);
+  const encomiendaRows = encomiendaOrders.slice(0, 10).map(o => ({
+    id: o.id, cliente: o.client, destino: orderExtras[o.id]?.address || '—',
+    estado: o.delivery === 'delivered' ? 'Entregado' : o.delivery === 'not_delivered' ? 'No entregado' : 'En tránsito',
+    costo: (() => { const v = parseFloat((orderExtras[o.id]?.shipping + '') || ''); return isNaN(v) ? '—' : '$' + v.toFixed(2); })(),
+  }));
+
+  // Métodos de pago reales (agrupados por lo que el negocio realmente usó)
+  const payMap = {};
+  periodOrders.forEach(o => {
+    const label = orderExtras[o.id]?.pay;
+    if (!label || label === '—') return;
+    payMap[label] = (payMap[label] || 0) + 1;
+  });
+  const paymentMethods = Object.entries(payMap).sort((a, b) => b[1] - a[1]);
+
+  const waCount = periodOrders.filter(o => o.platform === 'wa').length;
+  const igCount = periodOrders.filter(o => o.platform === 'ig').length;
+  const totalPlat = waCount + igCount;
+  const canal = totalPlat > 0
+    ? { wa: Math.round(waCount / totalPlat * 100), ig: Math.round(igCount / totalPlat * 100) }
+    : { wa: 0, ig: 0 };
+
+  const newClients = clientsDB.filter(c => {
+    if (!c.createdAt) return false;
+    const d = new Date(c.createdAt);
+    return d >= start && d <= end;
+  }).length;
+
+  // Top productos por unidades e ingresos
+  const productMap = {};
+  periodOrders.forEach(o => {
+    const items = (o.items && o.items.length > 0)
+      ? o.items
+      : [{ name: o.product, qty: 1, linePrice: moneyToNum(o.price), emoji: orderExtras[o.id]?.emoji || '📦' }];
+    items.forEach(it => {
+      const key = it.name || 'Producto';
+      if (!productMap[key]) productMap[key] = { emoji: it.emoji || '📦', qty: 0, revenue: 0 };
+      productMap[key].qty += it.qty || 1;
+      productMap[key].revenue += it.linePrice || 0;
+    });
+  });
+  const topProducts = Object.entries(productMap)
+    .sort((a, b) => b[1].qty - a[1].qty)
+    .slice(0, 5)
+    .map(([name, v]) => [`${v.emoji} ${name}`, v.qty, '$' + v.revenue.toFixed(0)]);
+
+  // Ventas y cantidad de pedidos agrupados por sub-período, para los gráficos de barras
+  let bars = [], barsCount = [], barLabels = [];
+  const bucketOrders = (pred) => periodOrders.filter(pred);
+  const pushBucket = (pred, label) => {
+    const bucket = bucketOrders(pred);
+    bars.push(bucket.reduce((s, o) => s + moneyToNum(o.price), 0));
+    barsCount.push(bucket.length);
+    barLabels.push(label);
+  };
+
+  if (period === 'hoy') {
+    for (let i = 6; i >= 0; i--) {
+      const h = new Date(); h.setHours(h.getHours() - i, 0, 0, 0);
+      const hr = h.getHours();
+      pushBucket(
+        o => { const d = new Date(o.createdAt); return d.getHours() === hr && d.toDateString() === h.toDateString(); },
+        hr === 0 ? '12am' : hr < 12 ? hr + 'am' : hr === 12 ? '12pm' : (hr - 12) + 'pm'
+      );
+    }
+  } else if (period === '7dias') {
+    const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+    for (let i = 6; i >= 0; i--) {
+      const d0 = new Date(); d0.setDate(d0.getDate() - i);
+      pushBucket(o => new Date(o.createdAt).toDateString() === d0.toDateString(), dayNames[d0.getDay()]);
+    }
+  } else if (period === 'mes') {
+    const now = new Date();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const bucketStarts = [1,4,7,10,13,16,19,22,25,28].filter(d => d <= daysInMonth);
+    bucketStarts.forEach((startDay, idx) => {
+      const endDay = idx < bucketStarts.length - 1 ? bucketStarts[idx + 1] - 1 : daysInMonth;
+      pushBucket(o => { const dd = new Date(o.createdAt).getDate(); return dd >= startDay && dd <= endDay; }, String(startDay));
+    });
+  } else { // 'año' y 'personalizado'
+    const monthNames = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    for (let m = 0; m < 12; m++) {
+      pushBucket(o => new Date(o.createdAt).getMonth() === m, monthNames[m]);
+    }
+  }
+
+  return {
+    ventas, pedidos, entregados, pendientes, cancelados, delivery, encomiendas, newClients,
+    topProducts, bars, barsCount, barLabels, canal, avgShipping,
+    encomiendasEntregadas, encomiendasEnTransito, encomiendasIngresos, encomiendaRows, paymentMethods,
+  };
+}
 
 function setInfPeriod(p, el) {
   infPeriod = p;
@@ -8455,7 +8603,7 @@ function switchInfTab(tab, el) {
 }
 
 function renderInforme(tab) {
-  const d = infData[infPeriod];
+  const d = getInfData(infPeriod);
   const body = document.getElementById('infBody');
   body.innerHTML = '';
 
@@ -8465,10 +8613,10 @@ function renderInforme(tab) {
     body.innerHTML = `
       <!-- KPIs -->
       <div class="inf-kpi-row">
-        <div class="inf-kpi"><div class="inf-kpi-label">💰 Ventas totales</div><div class="inf-kpi-val">$${d.ventas.toLocaleString()}</div><div class="inf-kpi-sub inf-kpi-up">↑ vs período anterior</div></div>
-        <div class="inf-kpi"><div class="inf-kpi-label">📦 Pedidos</div><div class="inf-kpi-val">${d.pedidos}</div><div class="inf-kpi-sub inf-kpi-up">↑ +12%</div></div>
-        <div class="inf-kpi"><div class="inf-kpi-label">💵 Ticket promedio</div><div class="inf-kpi-val">$${(d.ventas/d.pedidos).toFixed(0)}</div><div class="inf-kpi-sub inf-kpi-neutral">Por pedido</div></div>
-        <div class="inf-kpi"><div class="inf-kpi-label">✅ Tasa de entrega</div><div class="inf-kpi-val">${Math.round(d.entregados/d.pedidos*100)}%</div><div class="inf-kpi-sub inf-kpi-up">↑ Excelente</div></div>
+        <div class="inf-kpi"><div class="inf-kpi-label">💰 Ventas totales</div><div class="inf-kpi-val">$${d.ventas.toLocaleString()}</div><div class="inf-kpi-sub inf-kpi-neutral">${periodLabel}</div></div>
+        <div class="inf-kpi"><div class="inf-kpi-label">📦 Pedidos</div><div class="inf-kpi-val">${d.pedidos}</div><div class="inf-kpi-sub inf-kpi-neutral">${periodLabel}</div></div>
+        <div class="inf-kpi"><div class="inf-kpi-label">💵 Ticket promedio</div><div class="inf-kpi-val">$${d.pedidos > 0 ? (d.ventas/d.pedidos).toFixed(0) : '0'}</div><div class="inf-kpi-sub inf-kpi-neutral">Por pedido</div></div>
+        <div class="inf-kpi"><div class="inf-kpi-label">✅ Tasa de entrega</div><div class="inf-kpi-val">${d.pedidos > 0 ? Math.round(d.entregados/d.pedidos*100) : 0}%</div><div class="inf-kpi-sub inf-kpi-neutral">${periodLabel}</div></div>
       </div>
 
       <!-- Bar chart -->
@@ -8494,7 +8642,9 @@ function renderInforme(tab) {
         <div class="inf-chart-card">
           <div class="inf-chart-title">Métodos de pago</div>
           <div class="inf-chart-sub">Más usados ${periodLabel}</div>
-          ${renderBarChart([42,31,18,9],[`Zelle`,`P.móvil`,`Binance`,`Efectivo`],'accent',60)}
+          ${d.paymentMethods.length > 0
+            ? renderBarChart(d.paymentMethods.map(p=>p[1]), d.paymentMethods.map(p=>p[0]), 'accent', 60)
+            : '<div style="padding:20px 0;text-align:center;font-size:12px;color:var(--text3);">Sin datos aún</div>'}
         </div>
       </div>
     `;
@@ -8502,15 +8652,15 @@ function renderInforme(tab) {
   } else if (tab === 'pedidos') {
     body.innerHTML = `
       <div class="inf-kpi-row">
-        <div class="inf-kpi"><div class="inf-kpi-label">📦 Total pedidos</div><div class="inf-kpi-val">${d.pedidos}</div><div class="inf-kpi-sub inf-kpi-up">↑ +8%</div></div>
-        <div class="inf-kpi"><div class="inf-kpi-label">✅ Entregados</div><div class="inf-kpi-val">${d.entregados}</div><div class="inf-kpi-sub inf-kpi-up" style="color:var(--green);">${Math.round(d.entregados/d.pedidos*100)}% del total</div></div>
+        <div class="inf-kpi"><div class="inf-kpi-label">📦 Total pedidos</div><div class="inf-kpi-val">${d.pedidos}</div><div class="inf-kpi-sub inf-kpi-neutral">${periodLabel}</div></div>
+        <div class="inf-kpi"><div class="inf-kpi-label">✅ Entregados</div><div class="inf-kpi-val">${d.entregados}</div><div class="inf-kpi-sub inf-kpi-up" style="color:var(--green);">${d.pedidos > 0 ? Math.round(d.entregados/d.pedidos*100) : 0}% del total</div></div>
         <div class="inf-kpi"><div class="inf-kpi-label">⏳ Pendientes</div><div class="inf-kpi-val">${d.pendientes}</div><div class="inf-kpi-sub inf-kpi-neutral">En proceso</div></div>
         <div class="inf-kpi"><div class="inf-kpi-label">❌ Cancelados</div><div class="inf-kpi-val">${d.cancelados}</div><div class="inf-kpi-sub inf-kpi-down" style="color:${d.cancelados>0?'var(--red)':'var(--green)'};">${d.cancelados>0?'Revisar':'Todo OK'}</div></div>
       </div>
       <div class="inf-chart-card">
         <div class="inf-chart-title">Pedidos por período</div>
         <div class="inf-chart-sub">Cantidad de pedidos recibidos ${periodLabel}</div>
-        ${renderBarChart(d.bars.map(v=>Math.round(v/d.ventas*d.pedidos*1.2+1)), d.barLabels)}
+        ${renderBarChart(d.barsCount, d.barLabels)}
       </div>
       <div class="inf-chart-card">
         <div class="inf-chart-title">Estado de pedidos</div>
@@ -8520,8 +8670,8 @@ function renderInforme(tab) {
             <div style="flex:1;background:var(--surface2);border-radius:10px;padding:14px 16px;border-left:3px solid ${c};">
               <div style="font-size:22px;font-weight:800;font-family:'Syne',sans-serif;color:${c};">${v}</div>
               <div style="font-size:12px;color:var(--text2);margin-top:2px;">${l}</div>
-              <div style="height:4px;background:var(--surface3);border-radius:2px;margin-top:8px;"><div style="width:${Math.round(v/d.pedidos*100)}%;height:100%;background:${c};border-radius:2px;"></div></div>
-              <div style="font-size:10px;color:var(--text3);margin-top:3px;">${Math.round(v/d.pedidos*100)}%</div>
+              <div style="height:4px;background:var(--surface3);border-radius:2px;margin-top:8px;"><div style="width:${d.pedidos>0?Math.round(v/d.pedidos*100):0}%;height:100%;background:${c};border-radius:2px;"></div></div>
+              <div style="font-size:10px;color:var(--text3);margin-top:3px;">${d.pedidos>0?Math.round(v/d.pedidos*100):0}%</div>
             </div>`).join('')}
         </div>
       </div>
@@ -8532,25 +8682,20 @@ function renderInforme(tab) {
       <div class="inf-kpi-row">
         <div class="inf-kpi"><div class="inf-kpi-label">🏍️ Deliveries</div><div class="inf-kpi-val">${d.delivery}</div><div class="inf-kpi-sub inf-kpi-neutral">Total ${periodLabel}</div></div>
         <div class="inf-kpi"><div class="inf-kpi-label">📦 Encomiendas</div><div class="inf-kpi-val">${d.encomiendas}</div><div class="inf-kpi-sub inf-kpi-neutral">Envíos a distancia</div></div>
-        <div class="inf-kpi"><div class="inf-kpi-label">🏪 Retiro tienda</div><div class="inf-kpi-val">${d.pedidos - d.delivery - d.encomiendas}</div><div class="inf-kpi-sub inf-kpi-neutral">En persona</div></div>
-        <div class="inf-kpi"><div class="inf-kpi-label">💸 Costo promedio</div><div class="inf-kpi-val">$3.20</div><div class="inf-kpi-sub inf-kpi-neutral">Por envío</div></div>
+        <div class="inf-kpi"><div class="inf-kpi-label">🏪 Retiro tienda</div><div class="inf-kpi-val">${Math.max(0, d.pedidos - d.delivery - d.encomiendas)}</div><div class="inf-kpi-sub inf-kpi-neutral">En persona</div></div>
+        <div class="inf-kpi"><div class="inf-kpi-label">💸 Costo promedio</div><div class="inf-kpi-val">$${d.avgShipping.toFixed(2)}</div><div class="inf-kpi-sub inf-kpi-neutral">Por envío</div></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div class="inf-chart-card">
           <div class="inf-chart-title">Tipos de entrega</div>
           <div class="inf-chart-sub">Distribución ${periodLabel}</div>
-          ${renderBarChart([d.delivery, d.encomiendas, d.pedidos-d.delivery-d.encomiendas], ['Motorizado','Encomienda','Retiro'], 'green', 80)}
+          ${renderBarChart([d.delivery, d.encomiendas, Math.max(0, d.pedidos-d.delivery-d.encomiendas)], ['Motorizado','Encomienda','Retiro'], 'green', 80)}
         </div>
         <div class="inf-chart-card">
           <div class="inf-chart-title">Zonas más frecuentes</div>
-          <div class="inf-chart-sub">Caracas y alrededores</div>
-          <div style="display:flex;flex-direction:column;gap:7px;margin-top:8px;">
-            ${[['Las Mercedes',32,'var(--accent)'],['Chacao',22,'var(--accent)'],['El Rosal',18,'var(--accent)'],['Petare',14,'var(--blue)'],['Miranda',10,'var(--blue)'],['Otras zonas',4,'var(--surface3)']].map(([z,p,c])=>`
-              <div style="display:flex;align-items:center;gap:8px;">
-                <span style="font-size:12px;color:var(--text2);width:100px;flex-shrink:0;">${z}</span>
-                <div style="flex:1;height:6px;background:var(--surface3);border-radius:3px;"><div style="width:${p}%;height:100%;background:${c};border-radius:3px;"></div></div>
-                <span style="font-size:11px;font-weight:600;color:var(--text2);width:30px;text-align:right;">${p}%</span>
-              </div>`).join('')}
+          <div class="inf-chart-sub">Aún no disponible</div>
+          <div style="padding:24px 8px;text-align:center;font-size:12px;color:var(--text3);">
+            CENTRAL todavía no registra la zona de entrega de cada pedido.
           </div>
         </div>
       </div>
@@ -8560,23 +8705,26 @@ function renderInforme(tab) {
     body.innerHTML = `
       <div class="inf-kpi-row">
         <div class="inf-kpi"><div class="inf-kpi-label">📦 Total encomiendas</div><div class="inf-kpi-val">${d.encomiendas}</div><div class="inf-kpi-sub inf-kpi-neutral">${periodLabel}</div></div>
-        <div class="inf-kpi"><div class="inf-kpi-label">✅ Entregadas</div><div class="inf-kpi-val">${Math.round(d.encomiendas*0.82)}</div><div class="inf-kpi-sub inf-kpi-up">82% éxito</div></div>
-        <div class="inf-kpi"><div class="inf-kpi-label">⏳ En tránsito</div><div class="inf-kpi-val">${Math.round(d.encomiendas*0.12)}</div><div class="inf-kpi-sub inf-kpi-neutral">En camino</div></div>
-        <div class="inf-kpi"><div class="inf-kpi-label">💰 Ingresos envío</div><div class="inf-kpi-val">$${(d.encomiendas*5).toLocaleString()}</div><div class="inf-kpi-sub inf-kpi-neutral">Cobrado</div></div>
+        <div class="inf-kpi"><div class="inf-kpi-label">✅ Entregadas</div><div class="inf-kpi-val">${d.encomiendasEntregadas}</div><div class="inf-kpi-sub inf-kpi-neutral">${d.encomiendas>0?Math.round(d.encomiendasEntregadas/d.encomiendas*100):0}%</div></div>
+        <div class="inf-kpi"><div class="inf-kpi-label">⏳ En tránsito</div><div class="inf-kpi-val">${d.encomiendasEnTransito}</div><div class="inf-kpi-sub inf-kpi-neutral">En camino</div></div>
+        <div class="inf-kpi"><div class="inf-kpi-label">💰 Ingresos envío</div><div class="inf-kpi-val">$${d.encomiendasIngresos.toLocaleString()}</div><div class="inf-kpi-sub inf-kpi-neutral">Cobrado</div></div>
       </div>
       <div class="inf-chart-card">
         <div class="inf-chart-title">Encomiendas por destino</div>
-        <div class="inf-chart-sub">Principales ciudades</div>
-        ${renderBarChart([35,24,18,12,7,4],['Maracay','Valencia','Maracaibo','Barquisimeto','Mérida','Otros'],'yellow',80)}
+        <div class="inf-chart-sub">Aún no disponible</div>
+        <div style="padding:24px 8px;text-align:center;font-size:12px;color:var(--text3);">
+          CENTRAL todavía no registra la ciudad de destino de cada encomienda.
+        </div>
       </div>
       <div class="inf-chart-card">
         <div class="inf-chart-title">Registro de encomiendas</div>
         <div class="inf-chart-sub">${periodLabel} · Detalle por envío</div>
         <table class="inf-table" style="margin-top:8px;">
-          <thead><tr><th>#Pedido</th><th>Cliente</th><th>Destino</th><th>Servicio</th><th>Estado</th><th>Costo</th></tr></thead>
+          <thead><tr><th>#Pedido</th><th>Cliente</th><th>Destino</th><th>Estado</th><th>Costo</th></tr></thead>
           <tbody>
-            ${[['#0050','Pedro Gutiérrez','Caracas','MRW','En tránsito','$5'],['#0046','Roberto Silva','Maracay','Zoom','Entregado','$6'],['#0040','Jorge Castillo','Valencia','MRW','Entregado','$7'],['#0038','Carmen López','Maracaibo','Tealca','En tránsito','$8'],['#0035','Luis Herrera','Barquisimeto','Domesa','Entregado','$6']].map(([id,cl,dst,svc,st,cst])=>`
-              <tr><td class="bold">${id}</td><td>${cl}</td><td>${dst}</td><td>${svc}</td><td><span style="font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:5px;background:${st==='Entregado'?'var(--green-dim)':'var(--yellow-dim)'};color:${st==='Entregado'?'var(--green)':'var(--yellow)'};">${st}</span></td><td class="green">${cst}</td></tr>`).join('')}
+            ${d.encomiendaRows.length > 0
+              ? d.encomiendaRows.map(r=>`<tr><td class="bold">${r.id}</td><td>${r.cliente}</td><td>${r.destino}</td><td><span style="font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:5px;background:${r.estado==='Entregado'?'var(--green-dim)':'var(--yellow-dim)'};color:${r.estado==='Entregado'?'var(--green)':'var(--yellow)'};">${r.estado}</span></td><td class="green">${r.costo}</td></tr>`).join('')
+              : '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:20px;">Sin encomiendas registradas.</td></tr>'}
           </tbody>
         </table>
       </div>
@@ -8608,6 +8756,14 @@ function renderInforme(tab) {
     `;
 
   } else if (tab === 'productos') {
+    if (d.topProducts.length === 0) {
+      body.innerHTML = `
+        <div class="inf-chart-card" style="text-align:center;padding:40px 20px;color:var(--text3);font-size:13px;">
+          Aún no hay ventas de productos ${periodLabel} para mostrar un ranking.
+        </div>
+      `;
+      return;
+    }
     body.innerHTML = `
       <div class="inf-kpi-row">
         <div class="inf-kpi"><div class="inf-kpi-label">🏆 Más vendido</div><div class="inf-kpi-val" style="font-size:16px;">${d.topProducts[0][0]}</div><div class="inf-kpi-sub inf-kpi-up">${d.topProducts[0][1]} uds</div></div>
@@ -8646,13 +8802,16 @@ function renderInforme(tab) {
 
 // ─── CHART HELPERS ────────────────────────────────────────────
 function renderBarChart(data, labels, color='accent', maxH=100) {
+  if (!data || data.length === 0) {
+    return '<div style="padding:20px 0;text-align:center;font-size:12px;color:var(--text3);">Sin datos aún</div>';
+  }
   const max = Math.max(...data);
   const colorMap = { accent:'var(--accent)', green:'var(--green)', yellow:'var(--yellow)' };
   const c = colorMap[color] || colorMap.accent;
   return `
     <div style="display:flex;align-items:flex-end;gap:6px;height:${maxH+20}px;">
       ${data.map((v,i)=>{
-        const h = Math.max(4, Math.round(v/max*maxH));
+        const h = max > 0 ? Math.max(4, Math.round(v/max*maxH)) : 2;
         return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;">
           <div style="font-size:9px;color:var(--text3);font-weight:600;">${v>999?'$'+Math.round(v/1000)+'k':v}</div>
           <div style="width:100%;height:${maxH}px;display:flex;align-items:flex-end;">
@@ -8731,21 +8890,9 @@ function downloadExcel() {
 // ══════════════════════════════════════════════════
 
 // ─── DATA ─────────────────────────────────────────
-let cuentasCobro = [
-  { id:'cb1', banco:'Mercantil', emoji:'🏦', telefono:'0412-555-0123', rif:'J-29876543-1', cuenta:'01050012345678901234', nombre:'Mi Tienda VE C.A.', activo:true, metodo:'Pago Móvil' },
-  { id:'cb2', banco:'Banesco', emoji:'🏦', telefono:'0414-777-0456', rif:'J-29876543-1', cuenta:'01340012345678901234', nombre:'Mi Tienda VE C.A.', activo:true, metodo:'Pago Móvil' },
-];
+let cuentasCobro = [];
 
-let transacciones = [
-  { id:'TX0012', cliente:'María Fernández', pedido:'#0047', monto:'$45.00', metodo:'Pago Móvil · Mercantil', ref:'847382', estado:'ok', hora:'hace 5 min', banco:'Mercantil', validaciones:{monto:true,ref:true,tiempo:true,banco:true} },
-  { id:'TX0011', cliente:'Carlos Mendoza', pedido:'#0051', monto:'$65.00', metodo:'Zelle', ref:'Carlos.Mendoza@gmail.com', estado:'ok', hora:'hace 18 min', banco:'Zelle', validaciones:{monto:true,ref:true,tiempo:true,banco:true} },
-  { id:'TX0010', cliente:'Pedro Gutiérrez', pedido:'#0050', monto:'$32.00', metodo:'Pago Móvil · Banesco', ref:'293847', estado:'pend', hora:'hace 42 min', banco:'Banesco', validaciones:{monto:true,ref:false,tiempo:true,banco:true} },
-  { id:'TX0009', cliente:'Ana Rodríguez', pedido:'#0045', monto:'$28.00', metodo:'Binance · USDT', ref:'0x8f3d...a12c', estado:'ok', hora:'hace 1h', banco:'Binance', validaciones:{monto:true,ref:true,tiempo:true,banco:true} },
-  { id:'TX0008', cliente:'Roberto Silva', pedido:'#0046', monto:'$120.00', metodo:'Zelle', ref:'roberto.silva@gmail.com', estado:'ok', hora:'hace 2h', banco:'Zelle', validaciones:{monto:true,ref:true,tiempo:true,banco:true} },
-  { id:'TX0007', cliente:'Valentina Torres', pedido:'#0048', monto:'$58.00', metodo:'Pago Móvil · Mercantil', ref:'112938', estado:'fail', hora:'hace 3h', banco:'Mercantil', validaciones:{monto:false,ref:true,tiempo:false,banco:true} },
-  { id:'TX0006', cliente:'Luisa Martínez', pedido:'#0049', monto:'$38.00', metodo:'Pago Móvil · Banesco', ref:'774821', estado:'ok', hora:'hace 4h', banco:'Banesco', validaciones:{monto:true,ref:true,tiempo:true,banco:true} },
-  { id:'TX0005', cliente:'Miguel Ángel Ruiz', pedido:'#0053', monto:'$35.00', metodo:'Zelle', ref:'m.ruiz@gmail.com', estado:'pend', hora:'hace 5h', banco:'Zelle', validaciones:{monto:true,ref:true,tiempo:true,banco:false} },
-];
+let transacciones = [];
 
 let pagTab = 'dashboard';
 let selectedBanco = '';
@@ -8805,7 +8952,7 @@ function renderPagDashboard() {
       <div class="pag-kpi pag-kpi-blue">
         <div class="pag-kpi-icon" style="background:var(--blue-dim);">⚡</div>
         <div class="pag-kpi-label">Tasa de validación</div>
-        <div class="pag-kpi-val" style="color:var(--blue);">${Math.round(ok/(ok+pend+fail)*100)}%</div>
+        <div class="pag-kpi-val" style="color:var(--blue);">${(ok+pend+fail) > 0 ? Math.round(ok/(ok+pend+fail)*100) : 0}%</div>
         <div class="pag-kpi-sub">Automática</div>
       </div>
     </div>
@@ -8823,7 +8970,9 @@ function renderPagDashboard() {
           <span style="font-size:11px;color:var(--text3);">Actualizado ahora</span>
         </div>
         <div class="pag-card-body txn-scroll" style="max-height:340px;overflow-y:auto;">
-          ${transacciones.map(t => txnRowHTML(t)).join('')}
+          ${transacciones.length > 0
+            ? transacciones.map(t => txnRowHTML(t)).join('')
+            : '<div style="padding:24px 8px;text-align:center;font-size:12.5px;color:var(--text3);">Aún no hay pagos registrados.</div>'}
         </div>
       </div>
 
@@ -8874,21 +9023,23 @@ function renderPagValidacion() {
       <!-- Lo que ve el cliente -->
       <div>
         <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px;">Lo que ve el cliente</div>
+        ${t ? `
         <div class="pay-instr">
           <div class="pay-instr-title">📱 Instrucciones de pago</div>
-          <div class="pay-instr-row"><span class="pay-instr-label">Pedido</span><span class="pay-instr-val">#0047</span></div>
-          <div class="pay-instr-row"><span class="pay-instr-label">Monto a pagar</span><span class="pay-instr-val" style="color:var(--green);">$45.00 USD</span></div>
-          <div class="pay-instr-row"><span class="pay-instr-label">Método</span><span class="pay-instr-val">Pago Móvil</span></div>
-          <div class="pay-instr-row"><span class="pay-instr-label">Banco</span><span class="pay-instr-val">Mercantil</span></div>
-          <div class="pay-instr-row"><span class="pay-instr-label">Teléfono</span><span class="pay-instr-val">0412-555-0123</span></div>
+          <div class="pay-instr-row"><span class="pay-instr-label">Pedido</span><span class="pay-instr-val">${t.pedido}</span></div>
+          <div class="pay-instr-row"><span class="pay-instr-label">Monto a pagar</span><span class="pay-instr-val" style="color:var(--green);">${t.monto} USD</span></div>
+          <div class="pay-instr-row"><span class="pay-instr-label">Método</span><span class="pay-instr-val">${t.metodo}</span></div>
+          <div class="pay-instr-row"><span class="pay-instr-label">Banco</span><span class="pay-instr-val">${t.banco || '—'}</span></div>
           <div style="border-top:1px dashed var(--border2);margin:10px 0 4px;"></div>
-          <div style="text-align:center;font-size:10.5px;color:var(--text3);margin-bottom:4px;">Escribe esta referencia en la nota</div>
-          <div class="pay-ref">847382</div>
+          <div style="text-align:center;font-size:10.5px;color:var(--text3);margin-bottom:4px;">Referencia</div>
+          <div class="pay-ref">${t.ref || '—'}</div>
           <div class="pay-ref-label">Referencia única · Válida por 30 minutos</div>
-          <div style="background:rgba(34,211,160,0.08);border:1px solid rgba(34,211,160,0.2);border-radius:9px;padding:8px 12px;font-size:11.5px;color:var(--green);text-align:center;font-weight:600;">
-            ✓ Una vez pagado, tu pedido se aprueba automáticamente
-          </div>
         </div>
+        ` : `
+        <div class="pay-instr" style="text-align:center;color:var(--text3);font-size:12.5px;padding:32px 16px;">
+          Aún no hay pagos por validar.
+        </div>
+        `}
       </div>
 
       <!-- Historial de validaciones recientes -->
@@ -8900,7 +9051,9 @@ function renderPagValidacion() {
             <span style="font-size:11px;color:var(--text3);">Actualizado ahora</span>
           </div>
           <div class="pag-card-body txn-scroll" style="max-height:360px;overflow-y:auto;">
-            ${transacciones.map(t => txnRowHTML(t)).join('')}
+            ${transacciones.length > 0
+              ? transacciones.map(t => txnRowHTML(t)).join('')
+              : '<div style="padding:24px 8px;text-align:center;font-size:12.5px;color:var(--text3);">Sin transacciones registradas.</div>'}
           </div>
         </div>
       </div>
@@ -9005,7 +9158,9 @@ function renderPagTransacciones() {
         <span style="font-size:11px;color:var(--text3);">${transacciones.length} transacciones</span>
       </div>
       <div class="pag-card-body txn-scroll" id="txnList" style="max-height:420px;overflow-y:auto;">
-        ${transacciones.map(t => txnRowHTML(t)).join('')}
+        ${transacciones.length > 0
+          ? transacciones.map(t => txnRowHTML(t)).join('')
+          : '<div style="padding:24px 8px;text-align:center;font-size:12.5px;color:var(--text3);">Sin transacciones registradas.</div>'}
       </div>
     </div>
   `;
@@ -9015,7 +9170,9 @@ function filterTxns(estado, el) {
   document.querySelectorAll('#pagBody .inf-filter-btn').forEach(b => b.classList.remove('active'));
   el.classList.add('active');
   const filtered = estado === 'all' ? transacciones : transacciones.filter(t => t.estado === estado);
-  document.getElementById('txnList').innerHTML = filtered.map(t => txnRowHTML(t)).join('');
+  document.getElementById('txnList').innerHTML = filtered.length > 0
+    ? filtered.map(t => txnRowHTML(t)).join('')
+    : '<div style="padding:24px 8px;text-align:center;font-size:12.5px;color:var(--text3);">Sin transacciones registradas.</div>';
 }
 
 // ─── CONFIGURACIÓN ────────────────────────────────
@@ -9065,9 +9222,9 @@ function renderPagConfig() {
           <div class="pag-card-header"><div class="pag-card-title">🔌 Proveedores de validación</div></div>
           <div class="pag-card-body" style="display:flex;flex-direction:column;gap:10px;">
             ${[
-              { name:'MercantilProvider', desc:'API directa Banco Mercantil', status:'connected', color:'var(--green)' },
-              { name:'BanescoProvider', desc:'API directa Banesco', status:'connected', color:'var(--green)' },
-              { name:'FintechProvider', desc:'Intermediario universal', status:'ready', color:'var(--blue)' },
+              { name:'MercantilProvider', desc:'API directa Banco Mercantil', status:'coming', color:'var(--text3)' },
+              { name:'BanescoProvider', desc:'API directa Banesco', status:'coming', color:'var(--text3)' },
+              { name:'FintechProvider', desc:'Intermediario universal', status:'coming', color:'var(--text3)' },
               { name:'ZelleProvider', desc:'Validación Zelle', status:'coming', color:'var(--text3)' },
               { name:'BinanceProvider', desc:'Validación USDT/BTC', status:'coming', color:'var(--text3)' },
             ].map(p=>`
@@ -10091,7 +10248,7 @@ async function loadRealClients() {
         pay: rc.payMethod || '', channel: rc.channel || 'wa', notes: rc.notes || '',
         grad: grads[idx % grads.length], orders: relatedOrders,
         isNew: (Date.now() - new Date(rc.createdAt).getTime()) < 7 * 24 * 60 * 60 * 1000,
-        isVip: !!rc.isVip,
+        isVip: !!rc.isVip, createdAt: rc.createdAt,
       });
     });
 
