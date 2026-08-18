@@ -2485,13 +2485,13 @@
       <div class="stats-row">
         <div class="stat-card">
           <div class="stat-label">Pedidos hoy</div>
-          <div class="stat-val">12</div>
-          <div class="stat-change sc-up">↑ +3 vs ayer</div>
+          <div class="stat-val" id="statPedidosHoy">0</div>
+          <div class="stat-change sc-up" id="statPedidosHoyChange">— vs ayer</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Ventas del día</div>
-          <div class="stat-val">$576</div>
-          <div class="stat-change sc-up">↑ +$120</div>
+          <div class="stat-val" id="statVentasHoy">$0</div>
+          <div class="stat-change sc-up" id="statVentasHoyChange">— vs ayer</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Pend. de pago</div>
@@ -2517,7 +2517,7 @@
 
       <div class="ped-filter-bar">
         <div class="ped-filter-tab active" id="pft-all" onclick="filterOrders('all',this)">
-          Todos <span class="pft-count">12</span>
+          Todos <span class="pft-count" id="count-all">0</span>
         </div>
         <div class="ped-filter-tab" id="pft-to_deliver" onclick="filterOrders('to_deliver',this)">
           <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:13px;height:13px"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12"/></svg>
@@ -4772,6 +4772,42 @@ function updateOrderCounts() {
     ppChange.textContent = '💳 Por cobrar';
     ppChange.className = 'stat-change sc-warn';
   }
+
+  // Total de pedidos (tab "Todos")
+  const countAllEl = document.getElementById('count-all');
+  if (countAllEl) countAllEl.textContent = orders.length;
+
+  // Pedidos hoy / Ventas del día, comparados contra ayer — con datos reales
+  const today = new Date();
+  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+  const isSameDay = (d1, d2) => d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
+
+  let todayCount = 0, todaySales = 0, yesterdayCount = 0, yesterdaySales = 0;
+  orders.forEach(o => {
+    if (!o.createdAt) return;
+    const d = new Date(o.createdAt);
+    const price = parseFloat((o.price + '').replace(/[^0-9.]/g, '')) || 0;
+    if (isSameDay(d, today)) { todayCount++; todaySales += price; }
+    else if (isSameDay(d, yesterday)) { yesterdayCount++; yesterdaySales += price; }
+  });
+
+  const pedidosHoyEl = document.getElementById('statPedidosHoy');
+  if (pedidosHoyEl) pedidosHoyEl.textContent = todayCount;
+  const pedidosHoyChangeEl = document.getElementById('statPedidosHoyChange');
+  if (pedidosHoyChangeEl) {
+    const diff = todayCount - yesterdayCount;
+    pedidosHoyChangeEl.textContent = (diff >= 0 ? '↑ +' : '↓ ') + diff + ' vs ayer';
+    pedidosHoyChangeEl.className = 'stat-change ' + (diff >= 0 ? 'sc-up' : 'sc-red');
+  }
+
+  const ventasHoyEl = document.getElementById('statVentasHoy');
+  if (ventasHoyEl) ventasHoyEl.textContent = '$' + todaySales.toFixed(0);
+  const ventasHoyChangeEl = document.getElementById('statVentasHoyChange');
+  if (ventasHoyChangeEl) {
+    const diffSales = todaySales - yesterdaySales;
+    ventasHoyChangeEl.textContent = (diffSales >= 0 ? '↑ +$' : '↓ -$') + Math.abs(diffSales).toFixed(0) + ' vs ayer';
+    ventasHoyChangeEl.className = 'stat-change ' + (diffSales >= 0 ? 'sc-up' : 'sc-red');
+  }
 }
 
 function filterOrders(type, el) {
@@ -5146,7 +5182,7 @@ function confirmOrder() {
     id: d.id, client: d.client, product: productFull,
     platform: d.platform, price: total,
     pay: 'pend', delivery: 'to_deliver', time: 'ahora mismo',
-    dateStr, timeStr,
+    dateStr, timeStr, createdAt: now.toISOString(),
   };
   orders.unshift(newOrder);
 
@@ -8250,7 +8286,7 @@ function saveNewOrder() {
   const timeStr = now.toLocaleTimeString('es-VE',{hour:'2-digit',minute:'2-digit'});
   const newId = '#0' + String(orders.length + 53).padStart(2,'0');
   const totalStr = document.getElementById('noTotal').value || '$0';
-  orders.unshift({ id:newId, client:clientName, product:productLabel, platform:'wa', price:totalStr, pay:'pend', delivery:'to_deliver', time:'ahora mismo', items:allItems });
+  orders.unshift({ id:newId, client:clientName, product:productLabel, platform:'wa', price:totalStr, pay:'pend', delivery:'to_deliver', time:'ahora mismo', items:allItems, createdAt: now.toISOString() });
   orderExtras[newId] = { pay:payLabel, delivery:delLabel, address, notes, emoji:firstEmoji, shipping:shippingVal||null, dateStr, timeStr, productDetail:'' };
   renderOrders();
   closeNewOrderModal();
@@ -9989,7 +10025,7 @@ async function loadRealOrders() {
         id: legacyId, client: ro.clientName, product: ro.productSummary,
         platform: ro.platform, price: '$' + (Number(ro.totalPrice) || 0).toFixed(2),
         pay: ro.payStatus, delivery: ro.deliveryStatus, time: timeAgo(ro.createdAt),
-        items,
+        items, createdAt: ro.createdAt,
       });
       orderExtras[legacyId] = {
         pay: ro.payMethodLabel || '—', delivery: ro.deliveryMethodLabel || '—',
