@@ -3711,13 +3711,13 @@ var businessProfile = (function() {
     if (saved) return JSON.parse(saved);
   } catch(e) {}
   return {
-    businessName: 'Mi Tienda',
+    businessName: '',
     initials: 'MT',
-    city: 'Caracas',
-    country: 'Venezuela',
-    phone: '+58 412 555 0100',
-    fullName: 'Usuario CENTRAL',
-    email: 'tienda@ejemplo.com',
+    city: '',
+    country: '',
+    phone: '',
+    fullName: '',
+    email: '',
     welcome: '¡Hola! 👋 Bienvenido. ¿En qué te puedo ayudar?',
   };
 })();
@@ -3759,16 +3759,19 @@ async function verifySessionAndApplyTenant() {
       id: t.id, businessName: t.business_name, fullName: t.full_name,
       email: t.email, plan: t.plan, country: t.country,
     }));
-    // Apply business name to UI
+    // Sincronizar el perfil del negocio con los datos reales del registro —
+    // antes solo se copiaba businessName y el resto quedaba con valores de ejemplo ("Mi Tienda", "tienda@ejemplo.com", etc.)
     if (t.business_name) {
       businessProfile.businessName = t.business_name;
       const initials = t.business_name.split(/\s+/).map(w => w[0] || '').join('').slice(0,2).toUpperCase();
       businessProfile.initials = initials || 'MT';
-      if (!localStorage.getItem('central_profile')) {
-        try { localStorage.setItem('central_profile', JSON.stringify(businessProfile)); } catch(e) {}
-      }
-      applyBrandingGlobal();
     }
+    if (t.full_name)      businessProfile.fullName = t.full_name;
+    if (t.email)          businessProfile.email = t.email;
+    if (t.country)        businessProfile.country = t.country;
+    if (t.whatsapp_number) businessProfile.phone = t.whatsapp_number;
+    try { localStorage.setItem('central_profile', JSON.stringify(businessProfile)); } catch(e) {}
+    applyBrandingGlobal();
     // Apply plan
     if (t.plan) applyPlanNavigation(t.plan);
   } catch(e) {
@@ -7498,11 +7501,18 @@ async function loadBillingStatus() {
 
     const statusEl = document.getElementById('billingStatusBadge');
     if (statusEl) {
-      const statusMap = { free:'Gratis', active:'Activo', past_due:'Pago pendiente', cancelled:'Cancelado' };
-      const statusColor = { free:'var(--text3)', active:'var(--green)', past_due:'var(--yellow)', cancelled:'var(--red)' };
       const bs = data.billingStatus || 'free';
-      statusEl.textContent = statusMap[bs] || bs;
-      statusEl.style.color = statusColor[bs] || 'var(--text2)';
+      if (bs === 'free' && plan !== 'basic') {
+        // Plan pagado sin suscripción de Stripe activa — normalmente significa que
+        // el acceso fue otorgado manualmente desde Central Admin (ej. período de prueba)
+        statusEl.textContent = 'Acceso otorgado manualmente';
+        statusEl.style.color = 'var(--blue)';
+      } else {
+        const statusMap = { free:'Gratis', active:'Activo', past_due:'Pago pendiente', cancelled:'Cancelado' };
+        const statusColor = { free:'var(--text3)', active:'var(--green)', past_due:'var(--yellow)', cancelled:'var(--red)' };
+        statusEl.textContent = statusMap[bs] || bs;
+        statusEl.style.color = statusColor[bs] || 'var(--text2)';
+      }
     }
 
     const nextDate = document.getElementById('billingNextDate');
@@ -9925,6 +9935,17 @@ function saveProfileSettings() {
   try { localStorage.setItem('central_profile', JSON.stringify(businessProfile)); } catch(e) {}
   applyBrandingGlobal();
   showToast('Perfil guardado correctamente ✓');
+
+  // Guardar también en el backend real, para que Central Admin refleje los cambios
+  fetch(BACKEND_URL + '/api/tenant/profile', {
+    method: 'PUT', headers: apiHeaders(),
+    body: JSON.stringify({
+      business_name: businessProfile.businessName,
+      email: businessProfile.email,
+      country: businessProfile.country,
+      whatsapp_number: businessProfile.phone,
+    }),
+  }).catch(err => console.warn('No se pudo sincronizar el perfil con el servidor:', err.message));
 }
 
 function applyBrandingGlobal() {
