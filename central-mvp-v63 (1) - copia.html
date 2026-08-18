@@ -3917,6 +3917,9 @@ const convos = {
 // Timestamps de orden inicial para cada convo demo (mayor = más reciente)
 { const map = { maria:1000000, carlos:999940, luisa:999880, valentina:998560, ana:998500, pedro:995000, roberto:994940, gabriela:994880, miguel:994220, isabella:994160 }; Object.entries(map).forEach(([k,ts]) => { if (convos[k]) convos[k].ts = ts; }); }
 
+// Claves de las conversaciones de ejemplo — se eliminan en cuanto llegan datos reales del backend
+const DEMO_CONVO_KEYS = ['maria','carlos','luisa','valentina','ana','pedro','roberto','gabriela','miguel','isabella'];
+
 // ─── PERSISTENCIA DE CONVERSACIONES REALES ───────────────────
 function saveRealConvos() {
   const real = {};
@@ -4029,20 +4032,9 @@ const TICKET_CSS = `
 `;
 
 // ─── ORDERS DATA ───────────────────────────────────────────────
-let orders = [
-  { id:'#0051', client:'Carlos Mendoza', product:'Bolso Cuero Marrón x1', platform:'ig', price:'$65', pay:'pend', delivery:'to_deliver', time:'hace 5 min' },
-  { id:'#0050', client:'Pedro Gutiérrez', product:'Camisa Lino Blanca x2', platform:'ig', price:'$50', pay:'pend', delivery:'to_deliver', time:'hace 22 min' },
-  { id:'#0049', client:'Luisa Martínez', product:'Vestido Floral Rojo x1', platform:'wa', price:'$38', pay:'ok', delivery:'to_deliver', time:'hace 1h' },
-  { id:'#0048', client:'Valentina Torres', product:'Vestido Casual Verde x1', platform:'ig', price:'$42', pay:'ok', delivery:'to_deliver', time:'hace 1.5h' },
-  { id:'#0047', client:'María Fernández', product:'Zapatilla Runner Pro x1', platform:'wa', price:'$48', pay:'pend', delivery:'to_deliver', time:'hace 2h' },
-  { id:'#0046', client:'Roberto Silva', product:'Sneaker Classic x3', platform:'wa', price:'$120', pay:'ok', delivery:'delivered', time:'hace 3h' },
-  { id:'#0045', client:'Ana Rodríguez', product:'Jean Skinny Negro x1', platform:'wa', price:'$28', pay:'ok', delivery:'delivered', time:'hace 4h' },
-  { id:'#0044', client:'Carmen López', product:'Blusa Seda Beige x2', platform:'ig', price:'$52', pay:'ok', delivery:'delivered', time:'hace 5h' },
-  { id:'#0043', client:'Marcos Díaz', product:'Polo Algodón Azul x1', platform:'wa', price:'$18', pay:'ok', delivery:'delivered', time:'hace 6h' },
-  { id:'#0042', client:'Sofía Ramos', product:'Cartera Mini Rosa x1', platform:'ig', price:'$29', pay:'ok', delivery:'delivered', time:'hace 7h' },
-  { id:'#0041', client:'Luis Herrera', product:'Short Deportivo x2', platform:'wa', price:'$36', pay:'ok', delivery:'not_delivered', time:'hace 8h' },
-  { id:'#0040', client:'Jorge Castillo', product:'Gorra Trucker Negra x1', platform:'ig', price:'$15', pay:'pend', delivery:'not_delivered', time:'hace 9h' },
-];
+let orders = [];
+// Mapa orderNumber ('#0001') → id real (UUID) en la base de datos, para poder actualizar vía API
+const orderRealIds = {};
 
 let currentFilter = 'all';
 let currentConvo = 'maria';
@@ -4444,20 +4436,7 @@ async function sendFile(input) {
 // ─── ORDER DETAIL MODAL ───────────────────────────────────────
 let currentDetailId = null;
 
-const orderExtras = {
-  '#0051': { pay:'Zelle', delivery:'Encomienda', address:'Av. Bolívar 45, Maracay', notes:'Llama antes de enviar. Horario: 9am–6pm.', emoji:'👜' },
-  '#0050': { pay:'Pago móvil', delivery:'Motorizado', address:'Urb. La California, Caracas', notes:'Edificio azul, piso 2.', emoji:'👔' },
-  '#0049': { pay:'Pago móvil', delivery:'Motorizado', address:'Av. Libertador, Caracas, Piso 3 Apto 3B', notes:'Pago ya confirmado por captura.', emoji:'👗' },
-  '#0048': { pay:'Binance', delivery:'Retiro en tienda', address:'Retira en tienda', notes:'', emoji:'👗' },
-  '#0047': { pay:'Zelle', delivery:'Motorizado', address:'Las Mercedes, Caracas', notes:'Talla M confirmada por la cliente.', emoji:'👟' },
-  '#0046': { pay:'Zelle', delivery:'Motorizado', address:'Los Palos Grandes, Caracas', notes:'3 pares: tallas 40, 41, 42.', emoji:'👟' },
-  '#0045': { pay:'Binance', delivery:'Motorizado', address:'Av. Libertador, Caracas', notes:'', emoji:'👖' },
-  '#0044': { pay:'Efectivo $', delivery:'Retiro en tienda', address:'Retira en tienda', notes:'Pasó a buscar el miércoles.', emoji:'👚' },
-  '#0043': { pay:'Zelle', delivery:'Motorizado', address:'El Rosal, Caracas', notes:'', emoji:'👕' },
-  '#0042': { pay:'Pago móvil', delivery:'Motorizado', address:'Chacao, Caracas', notes:'', emoji:'👛' },
-  '#0041': { pay:'Zelle', delivery:'Motorizado', address:'Petare, Caracas', notes:'No atendió en primera visita.', emoji:'🩳' },
-  '#0040': { pay:'Pago móvil', delivery:'Encomienda', address:'Puerto La Cruz, Anzoátegui', notes:'Pendiente de pago. 2do aviso enviado.', emoji:'🧢' },
-};
+const orderExtras = {};
 
 const deliverySteps = ['Recibido','Pago','Preparando','Enviado','Entregado'];
 
@@ -4596,11 +4575,23 @@ function updateDetailDeliveryBtn(delivery) {
   btn.childNodes[btn.childNodes.length-1].textContent = ' ' + cfg.label;
 }
 
+// Persiste un cambio de estado de pedido en el backend real (no bloquea la UI)
+function patchOrder(orderId, fields) {
+  const realId = orderRealIds[orderId];
+  if (!realId) return;
+  fetch(BACKEND_URL + '/api/orders/' + realId, {
+    method: 'PATCH',
+    headers: apiHeaders(),
+    body: JSON.stringify(fields),
+  }).catch(err => console.warn('No se pudo actualizar el pedido en el servidor:', err.message));
+}
+
 function toggleOrderDelivery() {
   const o = orders.find(o => o.id === currentDetailId);
   if (!o) return;
   const cycle = { to_deliver:'delivered', delivered:'not_delivered', not_delivered:'to_deliver' };
   o.delivery = cycle[o.delivery];
+  patchOrder(o.id, { delivery_status: o.delivery });
   updateDetailDeliveryBtn(o.delivery);
   renderOrders();
   const labels = { to_deliver:'Por entregar', delivered:'Entregado ✓', not_delivered:'No entregado ⚠' };
@@ -4611,6 +4602,7 @@ function toggleOrderPay() {
   const o = orders.find(o => o.id === currentDetailId);
   if (!o) return;
   o.pay = o.pay === 'ok' ? 'pend' : 'ok';
+  patchOrder(o.id, { pay_status: o.pay });
   const payBadge = document.getElementById('odmPayBadge');
   payBadge.className = 'odm-pay-badge ' + (o.pay === 'ok' ? 'odm-pay-ok' : 'odm-pay-pend');
   payBadge.textContent = o.pay === 'ok' ? 'Cobrado ✓' : 'Pago pendiente';
@@ -4753,6 +4745,7 @@ function cycleDelivery(el, orderId) {
   if (!order) return;
   const cycle = { 'to_deliver': 'delivered', 'delivered': 'not_delivered', 'not_delivered': 'to_deliver' };
   order.delivery = cycle[order.delivery];
+  patchOrder(order.id, { delivery_status: order.delivery });
   renderOrders();
   const labels = { 'to_deliver': 'Por entregar', 'delivered': 'Entregado ✓', 'not_delivered': 'No entregado ⚠' };
   showToast(`Pedido ${orderId} → ${labels[order.delivery]}`);
@@ -5166,6 +5159,32 @@ function confirmOrder() {
   };
 
   renderOrders();
+
+  // Guardar el pedido en el backend real
+  fetch(BACKEND_URL + '/api/orders', {
+    method: 'POST',
+    headers: apiHeaders(),
+    body: JSON.stringify({
+      clientName: d.client,
+      platform: d.platform,
+      productSummary: productFull,
+      totalPrice: parseFloat((total + '').replace(/[^0-9.]/g, '')) || 0,
+      payStatus: 'pend',
+      deliveryStatus: 'to_deliver',
+      payMethodLabel: payLabel,
+      deliveryMethodLabel: delLabel,
+      address: orderExtras[d.id].address,
+      notes: orderExtras[d.id].notes,
+      shipping: shippingVal ? (parseFloat((shippingVal + '').replace(/[^0-9.]/g, '')) || 0) : 0,
+      items: (d.items || []).map(i => ({
+        emoji: i.emoji, name: i.name, detail: i.detail, qty: i.qty,
+        unitPrice: parseFloat((i.price + '').replace(/[^0-9.]/g, '')) || 0,
+        linePrice: i.linePrice || 0,
+      })),
+    }),
+  }).then(r => r.json()).then(saved => {
+    if (saved && saved.id) orderRealIds[d.id] = saved.id;
+  }).catch(err => console.warn('No se pudo guardar el pedido en el servidor:', err.message));
 
   // Send ticket to chat — stays in conversation
   const list = document.getElementById('msgList');
@@ -5592,45 +5611,18 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
-let catalog = [
-  {
-    key: 'calzado', name: 'Calzado', emoji: '👟',
-    products: [
-      { id: 'p1', name: 'Zapatilla Runner Pro', price: '$45', emoji: '👟', sizes: ['35','36','37','38','39','40','41','42'], colors: [{name:'Azul',hex:'#3b82f6'},{name:'Blanco',hex:'#f0f0f0'},{name:'Negro',hex:'#1a1a1a'}] },
-      { id: 'p2', name: 'Sneaker Classic', price: '$40', emoji: '👟', sizes: ['38','39','40','41','42','43'], colors: [{name:'Blanco',hex:'#f0f0f0'},{name:'Gris',hex:'#9090a8'}] },
-      { id: 'p3', name: 'Sandalia Verano', price: '$22', emoji: '🩴', sizes: ['35','36','37','38','39'], colors: [{name:'Marrón',hex:'#a0522d'},{name:'Arena',hex:'#f5deb3'}] },
-    ]
-  },
-  {
-    key: 'ropa_mujer', name: 'Ropa de Mujer', emoji: '👗',
-    products: [
-      { id: 'p4', name: 'Vestido Floral Rojo', price: '$38', emoji: '👗', sizes: ['XS','S','M','L','XL'], colors: [{name:'Rojo',hex:'#ef4444'},{name:'Rosa',hex:'#ec4899'}] },
-      { id: 'p5', name: 'Blusa Seda Beige', price: '$26', emoji: '👚', sizes: ['S','M','L'], colors: [{name:'Beige',hex:'#d4b896'},{name:'Blanco',hex:'#f0f0f0'},{name:'Negro',hex:'#1a1a1a'}] },
-      { id: 'p6', name: 'Vestido Casual Verde', price: '$42', emoji: '👗', sizes: ['XS','S','M','L'], colors: [{name:'Verde',hex:'#22d3a0'},{name:'Azul',hex:'#60b4ff'}] },
-    ]
-  },
-  {
-    key: 'ropa_hombre', name: 'Ropa de Hombre', emoji: '👔',
-    products: [
-      { id: 'p7', name: 'Camisa Lino Blanca', price: '$25', emoji: '👔', sizes: ['S','M','L','XL','XXL'], colors: [{name:'Blanco',hex:'#f0f0f0'},{name:'Azul claro',hex:'#bfdbfe'}] },
-      { id: 'p8', name: 'Polo Algodón', price: '$18', emoji: '👕', sizes: ['S','M','L','XL'], colors: [{name:'Azul',hex:'#3b82f6'},{name:'Negro',hex:'#1a1a1a'},{name:'Gris',hex:'#9090a8'},{name:'Blanco',hex:'#f0f0f0'}] },
-      { id: 'p9', name: 'Jean Skinny Negro', price: '$28', emoji: '👖', sizes: ['28','30','32','34','36'], colors: [{name:'Negro',hex:'#1a1a1a'},{name:'Azul oscuro',hex:'#1e3a5f'}] },
-    ]
-  },
-  {
-    key: 'accesorios', name: 'Accesorios', emoji: '👜',
-    products: [
-      { id: 'p10', name: 'Bolso Cuero Marrón', price: '$65', emoji: '👜', sizes: ['Único'], colors: [{name:'Marrón',hex:'#a0522d'},{name:'Negro',hex:'#1a1a1a'}] },
-      { id: 'p11', name: 'Cartera Mini Rosa', price: '$29', emoji: '👛', sizes: ['Único'], colors: [{name:'Rosa',hex:'#ec4899'},{name:'Beige',hex:'#d4b896'}] },
-    ]
-  },
-  {
+// Categoría especial "Varios" — un artículo libre para pedidos ad-hoc, no es un producto real del catálogo.
+// Siempre está presente (no depende del backend) para poder crear pedidos de artículos sin registrar.
+function makeVariosCategory() {
+  return {
     key: 'varios', name: 'Varios', emoji: '📦',
     products: [
       { id: 'pvarios', name: 'Artículo libre', price: '$0', emoji: '📦', sizes: [], colors: [], isVarios: true },
     ]
-  },
-];
+  };
+}
+
+let catalog = [ makeVariosCategory() ];
 
 let editingSizes = [];
 let editingColors = [];
@@ -5856,13 +5848,28 @@ function saveCatProduct() {
     weights: editingWeights, litros: editingLitros, unidades: editingUnidades,
   };
 
+  const apiPayload = {
+    categoryKey: cat.key, categoryName: cat.name, categoryEmoji: cat.emoji,
+    name, price: parseFloat((price || '0').replace(/[^0-9.]/g, '')) || 0,
+    emoji: editingEmoji, sizes: productData.sizes, colors: productData.colors,
+  };
+
   if (editId) {
     const prod = cat.products.find(p => p.id === editId);
     Object.assign(prod, productData);
     showToast(`"${name}" actualizado ✓`);
+    fetch(BACKEND_URL + '/api/catalog/' + prod.id, {
+      method: 'PATCH', headers: apiHeaders(), body: JSON.stringify(apiPayload),
+    }).catch(err => console.warn('No se pudo actualizar el producto en el servidor:', err.message));
   } else {
-    cat.products.push({ id: 'p' + Date.now(), ...productData });
+    const newProd = { id: 'p' + Date.now(), ...productData };
+    cat.products.push(newProd);
     showToast(`"${name}" agregado al catálogo ✓`);
+    fetch(BACKEND_URL + '/api/catalog', {
+      method: 'POST', headers: apiHeaders(), body: JSON.stringify(apiPayload),
+    }).then(r => r.json()).then(saved => {
+      if (saved && saved.id) newProd.id = saved.id; // id temporal → id real del servidor
+    }).catch(err => console.warn('No se pudo guardar el producto en el servidor:', err.message));
   }
   closeCatProductModal();
   renderCatalog();
@@ -5874,6 +5881,9 @@ function deleteProduct(catKey, prodId) {
   cat.products = cat.products.filter(p => p.id !== prodId);
   showToast(`"${prod.name}" eliminado`);
   renderCatalog();
+  fetch(BACKEND_URL + '/api/catalog/' + prodId, {
+    method: 'DELETE', headers: apiHeaders(),
+  }).catch(err => console.warn('No se pudo eliminar el producto en el servidor:', err.message));
 }
 
 function deleteCategory(catKey, catName) {
@@ -5881,9 +5891,14 @@ function deleteCategory(catKey, catName) {
   if (cat.products.length > 0) {
     if (!confirm(`¿Eliminar la categoría "${catName}" y sus ${cat.products.length} artículo(s)? Esta acción no se puede deshacer.`)) return;
   }
+  const idsToDelete = cat.products.map(p => p.id);
   catalog = catalog.filter(c => c.key !== catKey);
   showToast(`Categoría "${catName}" eliminada`);
   renderCatalog();
+  idsToDelete.forEach(id => {
+    fetch(BACKEND_URL + '/api/catalog/' + id, { method: 'DELETE', headers: apiHeaders() })
+      .catch(err => console.warn('No se pudo eliminar un producto en el servidor:', err.message));
+  });
 }
 
 // ─── SIZES ────────────────────────────────────────────────────
@@ -7661,18 +7676,7 @@ function switchSettings(panel, el) {
 }
 
 // ─── CLIENTS DATABASE ─────────────────────────────────────────
-let clientsDB = [
-  { id:'c001', name:'María Fernández', phone:'+58 412 555 0123', ig:'@mariafe', email:'mariafe@gmail.com', city:'Caracas', zone:'Las Mercedes', address:'Urb. Las Mercedes, Calle 5, Casa 12', pay:'Zelle', channel:'wa', notes:'Talla M en ropa. Le gustan los colores oscuros.', grad:'linear-gradient(135deg,#f093fb,#f5576c)', orders:['#0047'], isNew:true, isVip:false },
-  { id:'c002', name:'Carlos Mendoza', phone:'+58 414 333 0456', ig:'@carlosm', email:'', city:'Maracay', zone:'Aragua', address:'Av. Bolívar 45, Maracay', pay:'Binance', channel:'ig', notes:'Prefiere encomienda. Paga rápido.', grad:'linear-gradient(135deg,#E1306C,#fd1d1d)', orders:['#0051'], isNew:true, isVip:false },
-  { id:'c003', name:'Luisa Martínez', phone:'+58 416 777 0789', ig:'@luisamtz', email:'luisa@gmail.com', city:'Caracas', zone:'Libertador', address:'Av. Libertador, Piso 3 Apto 3B', pay:'Pago móvil', channel:'wa', notes:'Siempre pide talla S. Cliente recurrente.', grad:'linear-gradient(135deg,#43e97b,#38f9d7)', orders:['#0049'], isNew:false, isVip:true },
-  { id:'c004', name:'Valentina Torres', phone:'+58 424 111 0321', ig:'@valeto', email:'', city:'Caracas', zone:'Chacao', address:'Urb. El Rosal, Edificio 4, Apto 8', pay:'Zelle', channel:'ig', notes:'', grad:'linear-gradient(135deg,#a18cd1,#fbc2eb)', orders:['#0048','#0041'], isNew:false, isVip:true },
-  { id:'c005', name:'Ana Rodríguez', phone:'+58 412 999 0654', ig:'', email:'ana.rod@gmail.com', city:'Caracas', zone:'Los Palos Grandes', address:'Av. Los Palos Grandes, PH 2', pay:'Binance', channel:'wa', notes:'Talla M. Prefiere entrega en la tarde.', grad:'linear-gradient(135deg,#f7971e,#ffd200)', orders:['#0045'], isNew:false, isVip:false },
-  { id:'c006', name:'Roberto Silva', phone:'+58 416 555 0987', ig:'@robsilva', email:'rsilva@hotmail.com', city:'Caracas', zone:'Petare', address:'Urb. Petare Norte, Casa 7', pay:'Zelle', channel:'wa', notes:'Compra en cantidad. Darle descuento por volumen.', grad:'linear-gradient(135deg,#30cfd0,#330867)', orders:['#0046'], isNew:false, isVip:true },
-  { id:'c007', name:'Pedro Gutiérrez', phone:'+58 424 888 0123', ig:'@pedrogtz', email:'', city:'Caracas', zone:'La California', address:'Urb. La California Norte, Av. 5', pay:'Pago móvil', channel:'ig', notes:'', grad:'linear-gradient(135deg,#4facfe,#00f2fe)', orders:['#0050'], isNew:true, isVip:false },
-  { id:'c008', name:'Gabriela Mora', phone:'+58 412 444 0765', ig:'@gabimora', email:'gabimora@gmail.com', city:'Caracas', zone:'Baruta', address:'', pay:'Zelle', channel:'ig', notes:'Talla XL. Le gustan los vestidos oscuros.', grad:'linear-gradient(135deg,#f953c6,#b91d73)', orders:[], isNew:true, isVip:false },
-  { id:'c009', name:'Miguel Ángel Ruiz', phone:'+58 414 222 0543', ig:'', email:'', city:'Caracas', zone:'El Hatillo', address:'Urb. El Hatillo, Calle Real 22', pay:'Zelle', channel:'wa', notes:'', grad:'linear-gradient(135deg,#11998e,#38ef7d)', orders:[], isNew:false, isVip:false },
-  { id:'c010', name:'Isabella Pérez', phone:'+58 424 666 0234', ig:'@isabellap', email:'isabella@gmail.com', city:'Valencia', zone:'Carabobo', address:'Urb. Las Acacias, Valencia', pay:'Pago móvil', channel:'ig', notes:'Cliente de Valencia. Solo encomienda.', grad:'linear-gradient(135deg,#fddb92,#d1fdff)', orders:[], isNew:true, isVip:false },
-];
+let clientsDB = [];
 
 let currentClientId = null;
 let clientSearchQuery = '';
@@ -7909,10 +7913,19 @@ function saveClientProfile() {
     Object.assign(existing, data);
     existing._unsaved = false;
     showToast(`Ficha de ${name} actualizada ✓`);
+    fetch(BACKEND_URL + '/api/clients/' + existing.id, {
+      method: 'PATCH', headers: apiHeaders(), body: JSON.stringify(data),
+    }).catch(err => console.warn('No se pudo actualizar el cliente en el servidor:', err.message));
   } else {
     const temp = window._tempClient || {};
-    clientsDB.push({ ...temp, ...data, id: currentClientId, _unsaved: false });
+    const newClient = { ...temp, ...data, id: currentClientId, _unsaved: false };
+    clientsDB.push(newClient);
     showToast(`${name} agregado a tus clientes ✓`);
+    fetch(BACKEND_URL + '/api/clients', {
+      method: 'POST', headers: apiHeaders(), body: JSON.stringify(data),
+    }).then(r => r.json()).then(saved => {
+      if (saved && saved.id) newClient.id = saved.id; // id temporal → id real del servidor
+    }).catch(err => console.warn('No se pudo guardar el cliente en el servidor:', err.message));
   }
 
   closeProfileModal();
@@ -7926,6 +7939,11 @@ function deleteClient() {
   closeProfileModal();
   renderClients();
   showToast(`${c.name} eliminado de clientes`);
+  if (!c._unsaved) {
+    fetch(BACKEND_URL + '/api/clients/' + c.id, {
+      method: 'DELETE', headers: apiHeaders(),
+    }).catch(err => console.warn('No se pudo eliminar el cliente en el servidor:', err.message));
+  }
 }
 
 function closeProfileModal(e) {
@@ -8231,11 +8249,33 @@ function saveNewOrder() {
   const dateStr = now.toLocaleDateString('es-VE',{day:'2-digit',month:'long',year:'numeric'});
   const timeStr = now.toLocaleTimeString('es-VE',{hour:'2-digit',minute:'2-digit'});
   const newId = '#0' + String(orders.length + 53).padStart(2,'0');
-  orders.unshift({ id:newId, client:clientName, product:productLabel, platform:'wa', price:document.getElementById('noTotal').value||'$0', pay:'pend', delivery:'to_deliver', time:'ahora mismo', items:allItems });
+  const totalStr = document.getElementById('noTotal').value || '$0';
+  orders.unshift({ id:newId, client:clientName, product:productLabel, platform:'wa', price:totalStr, pay:'pend', delivery:'to_deliver', time:'ahora mismo', items:allItems });
   orderExtras[newId] = { pay:payLabel, delivery:delLabel, address, notes, emoji:firstEmoji, shipping:shippingVal||null, dateStr, timeStr, productDetail:'' };
   renderOrders();
   closeNewOrderModal();
   showToast(`Pedido ${newId} creado ✓`);
+
+  // Guardar el pedido en el backend real
+  fetch(BACKEND_URL + '/api/orders', {
+    method: 'POST',
+    headers: apiHeaders(),
+    body: JSON.stringify({
+      clientName, platform: 'wa', productSummary: productLabel,
+      totalPrice: parseFloat((totalStr + '').replace(/[^0-9.]/g, '')) || 0,
+      payStatus: 'pend', deliveryStatus: 'to_deliver',
+      payMethodLabel: payLabel, deliveryMethodLabel: delLabel,
+      address, notes,
+      shipping: shippingVal ? (parseFloat((shippingVal + '').replace(/[^0-9.]/g, '')) || 0) : 0,
+      items: allItems.map(i => ({
+        emoji: i.emoji, name: i.name, detail: i.detail, qty: i.qty,
+        unitPrice: parseFloat((i.price + '').replace(/[^0-9.]/g, '')) || 0,
+        linePrice: i.linePrice || 0,
+      })),
+    }),
+  }).then(r => r.json()).then(saved => {
+    if (saved && saved.id) orderRealIds[newId] = saved.id;
+  }).catch(err => console.warn('No se pudo guardar el pedido en el servidor:', err.message));
 }
 
 // ─── INFORMES ─────────────────────────────────────────────────
@@ -9738,6 +9778,8 @@ loadRealConversations().then(() => {
   loadChat(firstKey);
   showConvoHistory(firstKey);
 });
+loadRealOrders().then(() => { loadRealClients(); });
+loadRealCatalog();
 
 // ══ CUSTOM CURSOR TOUR ══════════════════════════════════════
 let tourActive = false;
@@ -9910,6 +9952,129 @@ function renderInboxList() {
 }
 
 // ─────────────────────────────────────────────────────────────
+// CARGA INICIAL — pedidos, clientes y catálogo reales desde backend
+// ─────────────────────────────────────────────────────────────
+function timeAgo(dateInput) {
+  const d = new Date(dateInput);
+  const diffMs = Date.now() - d.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'ahora mismo';
+  if (mins < 60) return `hace ${mins} min`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `hace ${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  return `hace ${days}d`;
+}
+
+async function loadRealOrders() {
+  try {
+    const res = await fetch(BACKEND_URL + '/api/orders', { headers: apiAuthHeader() });
+    if (!res.ok) throw new Error('Backend respondió ' + res.status);
+    const realOrders = await res.json();
+    if (!Array.isArray(realOrders)) return false;
+
+    orders.length = 0;
+    Object.keys(orderExtras).forEach(k => delete orderExtras[k]);
+
+    realOrders.forEach(ro => {
+      const legacyId = ro.orderNumber;
+      orderRealIds[legacyId] = ro.id;
+      const items = (ro.items || []).map(it => ({
+        emoji: it.emoji, name: it.name, detail: it.detail, qty: it.qty,
+        linePrice: Number(it.linePrice) || 0, price: '$' + (Number(it.unitPrice) || 0).toFixed(2),
+      }));
+      orders.push({
+        id: legacyId, client: ro.clientName, product: ro.productSummary,
+        platform: ro.platform, price: '$' + (Number(ro.totalPrice) || 0).toFixed(2),
+        pay: ro.payStatus, delivery: ro.deliveryStatus, time: timeAgo(ro.createdAt),
+        items,
+      });
+      orderExtras[legacyId] = {
+        pay: ro.payMethodLabel || '—', delivery: ro.deliveryMethodLabel || '—',
+        address: ro.address || '—', notes: ro.notes || '',
+        emoji: (items[0] && items[0].emoji) || '📦', shipping: ro.shipping ? Number(ro.shipping) : null,
+        dateStr: new Date(ro.createdAt).toLocaleDateString('es-VE', { day:'2-digit', month:'short', year:'numeric' }),
+        timeStr: new Date(ro.createdAt).toLocaleTimeString('es-VE', { hour:'2-digit', minute:'2-digit' }),
+        productDetail: '',
+      };
+    });
+
+    renderOrders();
+    console.log('✓ Pedidos reales cargados:', realOrders.length);
+    return true;
+  } catch (err) {
+    console.warn('No se pudo cargar pedidos reales:', err.message);
+    return false;
+  }
+}
+
+async function loadRealClients() {
+  try {
+    const res = await fetch(BACKEND_URL + '/api/clients', { headers: apiAuthHeader() });
+    if (!res.ok) throw new Error('Backend respondió ' + res.status);
+    const realClients = await res.json();
+    if (!Array.isArray(realClients)) return false;
+
+    clientsDB.length = 0;
+    const grads = ['linear-gradient(135deg,#f093fb,#f5576c)','linear-gradient(135deg,#4facfe,#00f2fe)',
+      'linear-gradient(135deg,#43e97b,#38f9d7)','linear-gradient(135deg,#f7971e,#ffd200)',
+      'linear-gradient(135deg,#a18cd1,#fbc2eb)','linear-gradient(135deg,#30cfd0,#330867)'];
+
+    realClients.forEach((rc, idx) => {
+      const relatedOrders = orders.filter(o => (o.client || '') === rc.name).map(o => o.id);
+      clientsDB.push({
+        id: rc.id, name: rc.name, phone: rc.phone || '', ig: rc.ig || '',
+        email: rc.email || '', city: rc.city || '', zone: rc.zone || '',
+        address: rc.address || '', extraAddresses: rc.extraAddresses || [],
+        pay: rc.payMethod || '', channel: rc.channel || 'wa', notes: rc.notes || '',
+        grad: grads[idx % grads.length], orders: relatedOrders,
+        isNew: (Date.now() - new Date(rc.createdAt).getTime()) < 7 * 24 * 60 * 60 * 1000,
+        isVip: !!rc.isVip,
+      });
+    });
+
+    if (typeof renderClients === 'function') { try { renderClients(); } catch (e) {} }
+    console.log('✓ Clientes reales cargados:', realClients.length);
+    return true;
+  } catch (err) {
+    console.warn('No se pudo cargar clientes reales:', err.message);
+    return false;
+  }
+}
+
+async function loadRealCatalog() {
+  try {
+    const res = await fetch(BACKEND_URL + '/api/catalog', { headers: apiAuthHeader() });
+    if (!res.ok) throw new Error('Backend respondió ' + res.status);
+    const realProducts = await res.json();
+    if (!Array.isArray(realProducts) || realProducts.length === 0) return false;
+
+    const byCategory = {};
+    realProducts.forEach(rp => {
+      const key = rp.categoryKey || 'general';
+      if (!byCategory[key]) {
+        byCategory[key] = { key, name: rp.categoryName || 'General', emoji: rp.categoryEmoji || '🛍️', products: [] };
+      }
+      byCategory[key].products.push({
+        id: rp.id, name: rp.name, price: '$' + (Number(rp.price) || 0).toFixed(2),
+        emoji: rp.emoji || '🛍️', sizes: rp.sizes || [], colors: rp.colors || [],
+      });
+    });
+
+    catalog.length = 0;
+    Object.values(byCategory).forEach(cat => catalog.push(cat));
+    catalog.push(makeVariosCategory()); // siempre disponible, no viene del backend
+
+    if (typeof renderCatalog === 'function') { try { renderCatalog(); } catch (e) {} }
+    console.log('✓ Catálogo real cargado:', realProducts.length, 'productos');
+    return true;
+  } catch (err) {
+    console.warn('No se pudo cargar el catálogo real:', err.message);
+    return false;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // CARGA INICIAL — conversaciones reales desde backend
 // ─────────────────────────────────────────────────────────────
 async function loadRealConversations() {
@@ -9922,6 +10087,9 @@ async function loadRealConversations() {
       console.log('Sin conversaciones reales aún — usando datos de ejemplo');
       return false;
     }
+
+    // Ya hay datos reales del backend — quitar las conversaciones de ejemplo
+    DEMO_CONVO_KEYS.forEach(k => { if (convos[k] && !convos[k].isReal) delete convos[k]; });
 
     realConvos.forEach(rc => {
       const key = rc.waId;
@@ -9969,6 +10137,12 @@ async function loadRealConversations() {
       console.warn('No se pudo crear WebSocket:', e.message);
       return;
     }
+
+    ws.onopen = () => {
+      console.log('🔌 Conectado al backend real en tiempo real');
+      const token = getJwt();
+      if (token) ws.send(JSON.stringify({ type: 'auth', token }));
+    };
 
     ws.onmessage = (event) => {
       try {
@@ -10033,18 +10207,8 @@ async function loadRealConversations() {
       }
     };
 
-    let pingInterval = null;
-    ws.onopen = function() {
-      const token = localStorage.getItem('central_jwt');
-      if (token) ws.send(JSON.stringify({ type: 'auth', token }));
-      pingInterval = setInterval(() => {
-        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'ping' }));
-      }, 25000);
-    };
-
     ws.onclose = () => {
       console.log('🔌 Desconectado del backend real — reintentando en 5s...');
-      if (pingInterval) clearInterval(pingInterval);
       setTimeout(connect, 5000);
     };
 
