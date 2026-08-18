@@ -9288,30 +9288,37 @@ function closePagModal(e) {
 }
 
 // ─── PLAN DE SUSCRIPCIÓN ──────────────────────────────────────
-let activePlan = 'pro'; // 'basic' | 'pro' | 'biz'
+let activePlan = 'pro'; // 'basic' | 'pro' | 'business'
 
 const planNavMap = {
-  basic: ['nav-inbox','nav-pedidos','nav-catalogo','nav-clientes'],
-  pro:   ['nav-inbox','nav-pedidos','nav-catalogo','nav-clientes','nav-informes'],
-  biz:   ['nav-inbox','nav-pedidos','nav-catalogo','nav-clientes','nav-informes','nav-pagos'],
+  basic:    ['nav-inbox','nav-pedidos','nav-catalogo','nav-clientes'],
+  pro:      ['nav-inbox','nav-pedidos','nav-catalogo','nav-clientes','nav-informes'],
+  business: ['nav-inbox','nav-pedidos','nav-catalogo','nav-clientes','nav-informes','nav-pagos'],
 };
 
+// El backend siempre manda 'basic' | 'pro' | 'business'. Algunos ids de DOM legacy
+// usan el sufijo corto 'biz' (planCard-biz, planBtn-biz) — solo para eso se traduce.
+function normalizePlan(plan) {
+  return plan === 'biz' ? 'business' : (plan || 'pro');
+}
+
 function applyPlanNavigation(plan) {
+  const p = normalizePlan(plan);
   const allNav = ['nav-inbox','nav-pedidos','nav-catalogo','nav-clientes','nav-informes','nav-pagos'];
-  const allowed = planNavMap[plan] || planNavMap.pro;
+  const allowed = planNavMap[p] || planNavMap.pro;
   allNav.forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.style.display = allowed.includes(id) ? '' : 'none';
   });
-  updatePlanBadge(plan);
+  updatePlanBadge(p);
 }
 
 // Mantiene el badge "PRO/BASIC/BUSINESS" del menú de Ajustes sincronizado con el plan real
 function updatePlanBadge(plan) {
   const badge = document.getElementById('planNavBadge');
   if (!badge) return;
-  const normalized = plan === 'biz' ? 'business' : plan;
+  const normalized = normalizePlan(plan);
   const labels = { basic: 'BASIC', pro: 'PRO', business: 'BUSINESS' };
   const bg     = { basic: 'var(--green-dim)',    pro: 'var(--accent-glow)', business: 'var(--yellow-dim)' };
   const fg     = { basic: 'var(--green)',        pro: 'var(--accent2)',     business: 'var(--yellow)' };
@@ -9322,6 +9329,7 @@ function updatePlanBadge(plan) {
 }
 
 function setPlan(plan) {
+  plan = normalizePlan(plan);
   activePlan = plan;
   applyPlanNavigation(plan);
 
@@ -9342,10 +9350,10 @@ function setPlan(plan) {
   // Refresh plan settings panel
   switchSettings('plan', document.querySelector('.ssn-item[onclick*="plan"]'));
 
-  const names = { basic:'Basic', pro:'Profesional', biz:'Business' };
+  const names = { basic:'Basic', pro:'Profesional', business:'Business' };
   showToast(`Plan ${names[plan]} activado ✓`);
   // Show BCV widget only for Business plan
-  showBcvWidget(plan === 'biz');
+  showBcvWidget(plan === 'business');
 }
 
 function applyProfileToSettings() {
