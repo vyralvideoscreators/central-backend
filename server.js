@@ -121,6 +121,74 @@ async function initDB() {
         PRIMARY KEY (id, tenant_id),
         FOREIGN KEY (wa_id, tenant_id) REFERENCES conversations(wa_id, tenant_id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS catalog_products (
+        id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id      UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        category_key   TEXT,
+        category_name  TEXT,
+        category_emoji TEXT,
+        name           TEXT NOT NULL,
+        price          NUMERIC(10,2) NOT NULL DEFAULT 0,
+        emoji          TEXT,
+        sizes          JSONB DEFAULT '[]',
+        colors         JSONB DEFAULT '[]',
+        description    TEXT,
+        created_at     TIMESTAMP DEFAULT NOW(),
+        updated_at     TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS clients (
+        id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        name            TEXT NOT NULL,
+        phone           TEXT,
+        ig              TEXT,
+        email           TEXT,
+        city            TEXT,
+        zone            TEXT,
+        address         TEXT,
+        extra_addresses JSONB DEFAULT '[]',
+        pay_method      TEXT,
+        channel         TEXT,
+        notes           TEXT,
+        is_vip          BOOLEAN DEFAULT false,
+        created_at      TIMESTAMP DEFAULT NOW(),
+        updated_at      TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS orders (
+        id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_number          BIGSERIAL,
+        tenant_id             UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        client_id             UUID REFERENCES clients(id) ON DELETE SET NULL,
+        client_name           TEXT,
+        platform              TEXT,
+        product_summary       TEXT,
+        total_price           NUMERIC(10,2) DEFAULT 0,
+        pay_status            TEXT DEFAULT 'pend',
+        delivery_status       TEXT DEFAULT 'to_deliver',
+        pay_method_label      TEXT,
+        delivery_method_label TEXT,
+        address               TEXT,
+        notes                 TEXT,
+        shipping              NUMERIC(10,2) DEFAULT 0,
+        created_at            TIMESTAMP DEFAULT NOW(),
+        updated_at            TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS order_items (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id    UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+        tenant_id   UUID NOT NULL,
+        product_id  UUID REFERENCES catalog_products(id) ON DELETE SET NULL,
+        emoji       TEXT,
+        name        TEXT,
+        detail      TEXT,
+        qty         INTEGER DEFAULT 1,
+        unit_price  NUMERIC(10,2),
+        line_price  NUMERIC(10,2)
+      );
     `);
 
     await seedDefaultTenant();
@@ -236,6 +304,271 @@ async function dbGetTenantByIgAccountId(igAccountId) {
     [igAccountId]
   );
   return rows[0] || null;
+}
+
+// ── DB helpers — Pedidos ─────────────────────────────────────
+
+function mapOrderRow(r) {
+  return {
+    id:                  r.id,
+    orderNumber:         '#' + String(r.order_number).padStart(4, '0'),
+    clientId:            r.client_id,
+    clientName:          r.client_name,
+    platform:            r.platform,
+    productSummary:      r.product_summary,
+    totalPrice:          r.total_price,
+    payStatus:           r.pay_status,
+    deliveryStatus:      r.delivery_status,
+    payMethodLabel:      r.pay_method_label,
+    deliveryMethodLabel: r.delivery_method_label,
+    address:             r.address,
+    notes:               r.notes,
+    shipping:            r.shipping,
+    createdAt:           r.created_at,
+    updatedAt:           r.updated_at,
+    items:               r.items || [],
+  };
+}
+
+async function dbGetOrders(tenantId) {
+  if (!dbReady) return [];
+  const { rows } = await pool.query(`
+    SELECT o.*,
+      COALESCE(
+        json_agg(
+          json_build_object(
+            'id', oi.id, 'productId', oi.product_id, 'emoji', oi.emoji,
+            'name', oi.name, 'detail', oi.detail, 'qty', oi.qty,
+            'unitPrice', oi.unit_price, 'linePrice', oi.line_price
+          )
+        ) FILTER (WHERE oi.id IS NOT NULL),
+        '[]'::json
+      ) AS items
+    FROM orders o
+    LEFT JOIN order_items oi ON oi.order_id = o.id
+    WHERE o.tenant_id = $1
+    GROUP BY o.id
+    ORDER BY o.created_at DESC
+  `, [tenantId]);
+  return rows.map(mapOrderRow);
+}
+
+async function dbCreateOrder(tenantId, data) {
+  if (!dbReady) return null;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(`
+      INSERT INTO orders (tenant_id, client_id, client_name, platform, product_summary,
+        total_price, pay_status, delivery_status, pay_method_label, delivery_method_label,
+        address, notes, shipping)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      RETURNING *
+    `, [
+      tenantId, data.clientId || null, data.clientName || null, data.platform || null,
+      data.productSummary || null, data.totalPrice || 0, data.payStatus || 'pend',
+      data.deliveryStatus || 'to_deliver', data.payMethodLabel || null,
+      data.deliveryMethodLabel || null, data.address || null, data.notes || null,
+      data.shipping || 0,
+    ]);
+    const order = rows[0];
+
+    for (const item of (data.items || [])) {
+      await client.query(`
+        INSERT INTO order_items (order_id, tenant_id, product_id, emoji, name, detail, qty, unit_price, line_price)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      `, [
+        order.id, tenantId, item.productId || null, item.emoji || null, item.name || null,
+        item.detail || null, item.qty || 1, item.unitPrice || 0, item.linePrice || 0,
+      ]);
+    }
+
+    await client.query('COMMIT');
+    const { rows: itemRows } = await pool.query(
+      'SELECT id, product_id, emoji, name, detail, qty, unit_price, line_price FROM order_items WHERE order_id = $1',
+      [order.id]
+    );
+    order.items = itemRows.map(i => ({
+      id: i.id, productId: i.product_id, emoji: i.emoji, name: i.name,
+      detail: i.detail, qty: i.qty, unitPrice: i.unit_price, linePrice: i.line_price,
+    }));
+    return mapOrderRow(order);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function dbUpdateOrder(tenantId, orderId, fields) {
+  if (!dbReady) return null;
+  const allowed = ['pay_status', 'delivery_status', 'pay_method_label', 'delivery_method_label',
+    'address', 'notes', 'client_name', 'product_summary', 'total_price', 'shipping'];
+  const sets = [];
+  const values = [];
+  let i = 1;
+  for (const [key, val] of Object.entries(fields)) {
+    if (!allowed.includes(key)) continue;
+    sets.push(`${key} = $${i++}`);
+    values.push(val);
+  }
+  if (sets.length === 0) return null;
+  sets.push(`updated_at = NOW()`);
+  values.push(orderId, tenantId);
+  const { rows } = await pool.query(
+    `UPDATE orders SET ${sets.join(', ')} WHERE id = $${i++} AND tenant_id = $${i} RETURNING *`,
+    values
+  );
+  if (!rows[0]) return null;
+  const { rows: itemRows } = await pool.query(
+    'SELECT id, product_id, emoji, name, detail, qty, unit_price, line_price FROM order_items WHERE order_id = $1',
+    [orderId]
+  );
+  rows[0].items = itemRows.map(it => ({
+    id: it.id, productId: it.product_id, emoji: it.emoji, name: it.name,
+    detail: it.detail, qty: it.qty, unitPrice: it.unit_price, linePrice: it.line_price,
+  }));
+  return mapOrderRow(rows[0]);
+}
+
+// ── DB helpers — Clientes ─────────────────────────────────────
+
+function mapClientRow(r) {
+  return {
+    id:             r.id,
+    name:           r.name,
+    phone:          r.phone,
+    ig:             r.ig,
+    email:          r.email,
+    city:           r.city,
+    zone:           r.zone,
+    address:        r.address,
+    extraAddresses: r.extra_addresses || [],
+    payMethod:      r.pay_method,
+    channel:        r.channel,
+    notes:          r.notes,
+    isVip:          r.is_vip,
+    createdAt:      r.created_at,
+    updatedAt:      r.updated_at,
+  };
+}
+
+async function dbGetClients(tenantId) {
+  if (!dbReady) return [];
+  const { rows } = await pool.query(
+    'SELECT * FROM clients WHERE tenant_id = $1 ORDER BY created_at DESC',
+    [tenantId]
+  );
+  return rows.map(mapClientRow);
+}
+
+async function dbUpsertClient(tenantId, data) {
+  if (!dbReady) return null;
+  if (data.id) {
+    const { rows } = await pool.query(`
+      UPDATE clients SET
+        name = $1, phone = $2, ig = $3, email = $4, city = $5, zone = $6,
+        address = $7, extra_addresses = $8, pay_method = $9, channel = $10,
+        notes = $11, is_vip = $12, updated_at = NOW()
+      WHERE id = $13 AND tenant_id = $14
+      RETURNING *
+    `, [
+      data.name, data.phone || null, data.ig || null, data.email || null,
+      data.city || null, data.zone || null, data.address || null,
+      JSON.stringify(data.extraAddresses || []), data.payMethod || null,
+      data.channel || null, data.notes || null, !!data.isVip, data.id, tenantId,
+    ]);
+    return rows[0] ? mapClientRow(rows[0]) : null;
+  }
+  const { rows } = await pool.query(`
+    INSERT INTO clients (tenant_id, name, phone, ig, email, city, zone, address,
+      extra_addresses, pay_method, channel, notes, is_vip)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+    RETURNING *
+  `, [
+    tenantId, data.name, data.phone || null, data.ig || null, data.email || null,
+    data.city || null, data.zone || null, data.address || null,
+    JSON.stringify(data.extraAddresses || []), data.payMethod || null,
+    data.channel || null, data.notes || null, !!data.isVip,
+  ]);
+  return mapClientRow(rows[0]);
+}
+
+async function dbDeleteClient(tenantId, clientId) {
+  if (!dbReady) return false;
+  const { rowCount } = await pool.query(
+    'DELETE FROM clients WHERE id = $1 AND tenant_id = $2',
+    [clientId, tenantId]
+  );
+  return rowCount > 0;
+}
+
+// ── DB helpers — Catálogo ─────────────────────────────────────
+
+function mapProductRow(r) {
+  return {
+    id:            r.id,
+    categoryKey:   r.category_key,
+    categoryName:  r.category_name,
+    categoryEmoji: r.category_emoji,
+    name:          r.name,
+    price:         r.price,
+    emoji:         r.emoji,
+    sizes:         r.sizes || [],
+    colors:        r.colors || [],
+    description:   r.description,
+    createdAt:     r.created_at,
+    updatedAt:     r.updated_at,
+  };
+}
+
+async function dbGetCatalog(tenantId) {
+  if (!dbReady) return [];
+  const { rows } = await pool.query(
+    'SELECT * FROM catalog_products WHERE tenant_id = $1 ORDER BY created_at ASC',
+    [tenantId]
+  );
+  return rows.map(mapProductRow);
+}
+
+async function dbUpsertProduct(tenantId, data) {
+  if (!dbReady) return null;
+  if (data.id) {
+    const { rows } = await pool.query(`
+      UPDATE catalog_products SET
+        category_key = $1, category_name = $2, category_emoji = $3, name = $4,
+        price = $5, emoji = $6, sizes = $7, colors = $8, description = $9, updated_at = NOW()
+      WHERE id = $10 AND tenant_id = $11
+      RETURNING *
+    `, [
+      data.categoryKey || null, data.categoryName || null, data.categoryEmoji || null,
+      data.name, data.price || 0, data.emoji || null,
+      JSON.stringify(data.sizes || []), JSON.stringify(data.colors || []),
+      data.description || null, data.id, tenantId,
+    ]);
+    return rows[0] ? mapProductRow(rows[0]) : null;
+  }
+  const { rows } = await pool.query(`
+    INSERT INTO catalog_products (tenant_id, category_key, category_name, category_emoji,
+      name, price, emoji, sizes, colors, description)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    RETURNING *
+  `, [
+    tenantId, data.categoryKey || null, data.categoryName || null, data.categoryEmoji || null,
+    data.name, data.price || 0, data.emoji || null,
+    JSON.stringify(data.sizes || []), JSON.stringify(data.colors || []), data.description || null,
+  ]);
+  return mapProductRow(rows[0]);
+}
+
+async function dbDeleteProduct(tenantId, productId) {
+  if (!dbReady) return false;
+  const { rowCount } = await pool.query(
+    'DELETE FROM catalog_products WHERE id = $1 AND tenant_id = $2',
+    [productId, tenantId]
+  );
+  return rowCount > 0;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -809,6 +1142,131 @@ app.get('/api/conversations/:waId', requireAuth, async (req, res) => {
     if (!rows[0]) return res.status(404).json({ error: 'Conversación no encontrada' });
     res.json({ waId: rows[0].wa_id, name: rows[0].name, platform: rows[0].platform,
                igSenderId: rows[0].ig_sender_id, messages: rows[0].messages || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════
+// API — Pedidos
+// ══════════════════════════════════════════════════════════════
+
+app.get('/api/orders', requireAuth, async (req, res) => {
+  try {
+    const orders = await dbGetOrders(req.tenant.tenantId);
+    res.json(orders);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/orders', requireAuth, async (req, res) => {
+  if (!req.body || !req.body.clientName) {
+    return res.status(400).json({ error: 'Falta clientName' });
+  }
+  try {
+    const order = await dbCreateOrder(req.tenant.tenantId, req.body);
+    res.json(order);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/orders/:id', requireAuth, async (req, res) => {
+  try {
+    const order = await dbUpdateOrder(req.tenant.tenantId, req.params.id, req.body || {});
+    if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
+    res.json(order);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════
+// API — Clientes
+// ══════════════════════════════════════════════════════════════
+
+app.get('/api/clients', requireAuth, async (req, res) => {
+  try {
+    const clients = await dbGetClients(req.tenant.tenantId);
+    res.json(clients);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/clients', requireAuth, async (req, res) => {
+  if (!req.body || !req.body.name) {
+    return res.status(400).json({ error: 'Falta name' });
+  }
+  try {
+    const client = await dbUpsertClient(req.tenant.tenantId, req.body);
+    res.json(client);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/clients/:id', requireAuth, async (req, res) => {
+  try {
+    const client = await dbUpsertClient(req.tenant.tenantId, { ...req.body, id: req.params.id });
+    if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
+    res.json(client);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/clients/:id', requireAuth, async (req, res) => {
+  try {
+    const ok = await dbDeleteClient(req.tenant.tenantId, req.params.id);
+    if (!ok) return res.status(404).json({ error: 'Cliente no encontrado' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════
+// API — Catálogo
+// ══════════════════════════════════════════════════════════════
+
+app.get('/api/catalog', requireAuth, async (req, res) => {
+  try {
+    const catalog = await dbGetCatalog(req.tenant.tenantId);
+    res.json(catalog);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/catalog', requireAuth, async (req, res) => {
+  if (!req.body || !req.body.name) {
+    return res.status(400).json({ error: 'Falta name' });
+  }
+  try {
+    const product = await dbUpsertProduct(req.tenant.tenantId, req.body);
+    res.json(product);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/catalog/:id', requireAuth, async (req, res) => {
+  try {
+    const product = await dbUpsertProduct(req.tenant.tenantId, { ...req.body, id: req.params.id });
+    if (!product) return res.status(404).json({ error: 'Producto no encontrado' });
+    res.json(product);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/catalog/:id', requireAuth, async (req, res) => {
+  try {
+    const ok = await dbDeleteProduct(req.tenant.tenantId, req.params.id);
+    if (!ok) return res.status(404).json({ error: 'Producto no encontrado' });
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
