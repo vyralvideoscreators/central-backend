@@ -2155,7 +2155,7 @@
           <div class="panel-top">
             <div class="panel-title">
               Bandeja
-              <span class="count-pill">10</span>
+              <span class="count-pill" id="convoCountPill">0</span>
             </div>
           </div>
           <div class="filter-tabs">
@@ -4062,6 +4062,7 @@ function selectConvo(el, key) {
     convos[key].unread = false;
     const dot = el.querySelector('.unread-dot');
     if (dot) dot.remove();
+    updateInboxCount();
   }
   loadChat(key);
   currentDraft = null;
@@ -10168,6 +10169,15 @@ function renderInboxList() {
     list.appendChild(div);
   });
   applyConvoFilters();
+  updateInboxCount();
+}
+
+// Cuenta las conversaciones con mensajes nuevos sin leer — el número junto a "Bandeja"
+function updateInboxCount() {
+  const pill = document.getElementById('convoCountPill');
+  if (!pill) return;
+  const unreadCount = Object.values(convos).filter(c => c.unread).length;
+  pill.textContent = unreadCount;
 }
 
 // ─────────────────────────────────────────────────────────────
