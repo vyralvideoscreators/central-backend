@@ -190,6 +190,20 @@ tbody td { padding: 11px 14px; vertical-align: middle; }
 .confirm-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 300; display:none; align-items:center; justify-content:center; }
 .confirm-overlay.open { display:flex; }
 .confirm-box { background: var(--card); border: 1px solid var(--border2); border-radius: 16px; padding: 28px; max-width: 360px; width: 100%; }
+
+/* ── Edit / reset-password dialog ── */
+.edit-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 300; display:none; align-items:center; justify-content:center; padding: 20px; }
+.edit-overlay.open { display:flex; }
+.edit-box { background: var(--card); border: 1px solid var(--border2); border-radius: 16px; padding: 28px; max-width: 480px; width: 100%; max-height: 90vh; overflow-y: auto; }
+.edit-title { font-size: 16px; font-weight: 800; margin-bottom: 4px; }
+.edit-sub { font-size: 12px; color: var(--text2); margin-bottom: 18px; }
+.edit-field { margin-bottom: 14px; }
+.edit-label { display: block; font-size: 12px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
+.edit-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.edit-btns { display: flex; gap: 10px; margin-top: 20px; }
+.edit-btns button { flex: 1; }
+.btn-primary-full { padding: 9px 16px; border-radius: 8px; background: var(--accent); border: none; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+.edit-err { color: var(--red); font-size: 12px; margin-bottom: 12px; display: none; }
 .confirm-title { font-size: 16px; font-weight: 800; margin-bottom: 8px; }
 .confirm-msg   { font-size: 13px; color: var(--text2); margin-bottom: 20px; line-height: 1.5; }
 .confirm-btns  { display: flex; gap: 8px; justify-content: flex-end; }
@@ -343,6 +357,76 @@ tbody td { padding: 11px 14px; vertical-align: middle; }
     <div class="confirm-btns">
       <button class="btn-cancel" onclick="closeConfirm()">Cancelar</button>
       <button class="btn-danger" id="confirmOkBtn">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── EDIT TENANT DIALOG ── -->
+<div class="edit-overlay" id="editOverlay">
+  <div class="edit-box">
+    <div class="edit-title">✎ Editar datos del negocio</div>
+    <div class="edit-sub">Los cambios se guardan de inmediato en la cuenta del cliente.</div>
+    <div class="edit-err" id="editErr"></div>
+
+    <div class="edit-field">
+      <label class="edit-label">Nombre del negocio</label>
+      <input class="form-input" id="editBusinessName" type="text">
+    </div>
+    <div class="edit-row">
+      <div class="edit-field">
+        <label class="edit-label">Nombre del dueño</label>
+        <input class="form-input" id="editFullName" type="text">
+      </div>
+      <div class="edit-field">
+        <label class="edit-label">País</label>
+        <input class="form-input" id="editCountry" type="text">
+      </div>
+    </div>
+    <div class="edit-field">
+      <label class="edit-label">Correo electrónico</label>
+      <input class="form-input" id="editEmail" type="email">
+    </div>
+    <div class="edit-field">
+      <label class="edit-label">WhatsApp del negocio</label>
+      <input class="form-input" id="editWhatsappNumber" type="text" placeholder="+58 414 555 0100">
+    </div>
+    <div class="edit-field">
+      <label class="edit-label">WhatsApp Phone Number ID</label>
+      <input class="form-input" id="editWhatsappPhoneId" type="text">
+    </div>
+    <div class="edit-field">
+      <label class="edit-label">WhatsApp Token</label>
+      <input class="form-input" id="editWhatsappToken" type="text">
+    </div>
+    <div class="edit-field">
+      <label class="edit-label">Instagram Access Token</label>
+      <input class="form-input" id="editIgToken" type="text">
+    </div>
+    <div class="edit-field">
+      <label class="edit-label">Instagram Account ID</label>
+      <input class="form-input" id="editIgAccountId" type="text">
+    </div>
+
+    <div class="edit-btns">
+      <button class="btn-cancel" onclick="closeEditTenant()">Cancelar</button>
+      <button class="btn-primary-full" id="editSaveBtn" onclick="saveEditTenant()">Guardar cambios</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── RESET PASSWORD DIALOG ── -->
+<div class="edit-overlay" id="resetPwOverlay">
+  <div class="edit-box" style="max-width:360px;">
+    <div class="edit-title">🔑 Resetear contraseña</div>
+    <div class="edit-sub">Define una nueva contraseña temporal para esta cuenta y compártela con el cliente.</div>
+    <div class="edit-err" id="resetPwErr"></div>
+    <div class="edit-field">
+      <label class="edit-label">Nueva contraseña (mín. 8 caracteres)</label>
+      <input class="form-input" id="resetPwInput" type="text" placeholder="Nueva contraseña">
+    </div>
+    <div class="edit-btns">
+      <button class="btn-cancel" onclick="closeResetPassword()">Cancelar</button>
+      <button class="btn-primary-full" id="resetPwSaveBtn" onclick="saveResetPassword()">Restablecer</button>
     </div>
   </div>
 </div>
@@ -570,6 +654,8 @@ function renderSidePanel(t) {
     </div>
 
     <div class="sp-actions">
+      <button class="btn-action" onclick="openEditTenant()">✎ Editar datos</button>
+      <button class="btn-action" onclick="openResetPassword('${t.id}')">🔑 Resetear contraseña</button>
       ${statusBtn}
       <button class="btn-action danger" onclick="confirmDelete('${t.id}','${esc(t.business_name)}')">🗑 Eliminar cuenta</button>
     </div>
@@ -641,6 +727,107 @@ function confirmDelete(tenantId, name) {
   );
 }
 
+// ── Edit tenant ──
+function openEditTenant() {
+  if (!currentTenant) return;
+  const t = currentTenant;
+  document.getElementById('editErr').style.display = 'none';
+  document.getElementById('editBusinessName').value    = t.business_name || '';
+  document.getElementById('editFullName').value        = t.full_name || '';
+  document.getElementById('editCountry').value         = t.country || '';
+  document.getElementById('editEmail').value           = t.email || '';
+  document.getElementById('editWhatsappNumber').value  = t.whatsapp_number || '';
+  document.getElementById('editWhatsappPhoneId').value = t.whatsapp_phone_number_id || '';
+  document.getElementById('editWhatsappToken').value   = t.whatsapp_token || '';
+  document.getElementById('editIgToken').value         = t.instagram_access_token || '';
+  document.getElementById('editIgAccountId').value     = t.instagram_account_id || '';
+  document.getElementById('editOverlay').classList.add('open');
+}
+function closeEditTenant() {
+  document.getElementById('editOverlay').classList.remove('open');
+}
+async function saveEditTenant() {
+  if (!currentTenant) return;
+  const errEl = document.getElementById('editErr');
+  errEl.style.display = 'none';
+  const businessName = document.getElementById('editBusinessName').value.trim();
+  const email = document.getElementById('editEmail').value.trim();
+  if (!businessName || !email) {
+    errEl.textContent = 'Nombre del negocio y correo son obligatorios';
+    errEl.style.display = 'block';
+    return;
+  }
+  const payload = {
+    business_name:            businessName,
+    full_name:                document.getElementById('editFullName').value.trim(),
+    country:                  document.getElementById('editCountry').value.trim(),
+    email:                    email,
+    whatsapp_number:          document.getElementById('editWhatsappNumber').value.trim(),
+    whatsapp_phone_number_id: document.getElementById('editWhatsappPhoneId').value.trim(),
+    whatsapp_token:           document.getElementById('editWhatsappToken').value.trim(),
+    instagram_access_token:   document.getElementById('editIgToken').value.trim(),
+    instagram_account_id:     document.getElementById('editIgAccountId').value.trim(),
+  };
+  const btn = document.getElementById('editSaveBtn');
+  btn.disabled = true;
+  try {
+    const res  = await fetch(BACKEND + '/api/admin/tenants/' + currentTenant.id, {
+      method: 'PUT', headers: adminHeader(), body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.error || 'Error al guardar'; errEl.style.display = 'block'; return; }
+    closeEditTenant();
+    showToast('Datos actualizados ✓');
+    await openDetail(currentTenant.id);
+    loadTenants(currentPage);
+  } catch {
+    errEl.textContent = 'No se pudo conectar con el servidor';
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Reset password ──
+let resetPwTenantId = null;
+function openResetPassword(tenantId) {
+  resetPwTenantId = tenantId;
+  document.getElementById('resetPwInput').value = '';
+  document.getElementById('resetPwErr').style.display = 'none';
+  document.getElementById('resetPwOverlay').classList.add('open');
+}
+function closeResetPassword() {
+  document.getElementById('resetPwOverlay').classList.remove('open');
+  resetPwTenantId = null;
+}
+async function saveResetPassword() {
+  if (!resetPwTenantId) return;
+  const errEl = document.getElementById('resetPwErr');
+  const newPassword = document.getElementById('resetPwInput').value;
+  if (!newPassword || newPassword.length < 8) {
+    errEl.textContent = 'La contraseña debe tener al menos 8 caracteres';
+    errEl.style.display = 'block';
+    return;
+  }
+  errEl.style.display = 'none';
+  const btn = document.getElementById('resetPwSaveBtn');
+  btn.disabled = true;
+  try {
+    const res  = await fetch(BACKEND + '/api/admin/tenants/' + resetPwTenantId + '/reset-password', {
+      method: 'POST', headers: adminHeader(), body: JSON.stringify({ newPassword }),
+    });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.error || 'Error al restablecer'; errEl.style.display = 'block'; return; }
+    closeResetPassword();
+    showToast('Contraseña actualizada ✓');
+  } catch {
+    errEl.textContent = 'No se pudo conectar con el servidor';
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // ── Confirm dialog ──
 let confirmCallback = null;
 function showConfirm(title, msg, cb) {
@@ -648,7 +835,7 @@ function showConfirm(title, msg, cb) {
   document.getElementById('confirmMsg').textContent   = msg;
   document.getElementById('confirmOverlay').classList.add('open');
   confirmCallback = cb;
-  document.getElementById('confirmOkBtn').onclick = () => { closeConfirm(); if (confirmCallback) confirmCallback(); };
+  document.getElementById('confirmOkBtn').onclick = () => { const cb = confirmCallback; closeConfirm(); if (cb) cb(); };
 }
 function closeConfirm() {
   document.getElementById('confirmOverlay').classList.remove('open');
