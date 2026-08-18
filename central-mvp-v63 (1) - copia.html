@@ -9774,9 +9774,11 @@ applyPlanNavigation(activePlan);
   try { renderPayGrids(); } catch(e) {}
 })();
 loadRealConversations().then(() => {
-  const firstKey = Object.keys(convos)[0] || 'maria';
-  loadChat(firstKey);
-  showConvoHistory(firstKey);
+  const firstKey = Object.keys(convos)[0];
+  if (firstKey) {
+    loadChat(firstKey);
+    showConvoHistory(firstKey);
+  }
 });
 loadRealOrders().then(() => { loadRealClients(); });
 loadRealCatalog();
@@ -10083,13 +10085,21 @@ async function loadRealConversations() {
     if (!res.ok) throw new Error('Backend respondió ' + res.status);
     const realConvos = await res.json();
 
-    if (!Array.isArray(realConvos) || realConvos.length === 0) {
-      console.log('Sin conversaciones reales aún — usando datos de ejemplo');
+    if (!Array.isArray(realConvos)) {
+      console.log('Respuesta inesperada del backend — usando datos de ejemplo');
       return false;
     }
 
-    // Ya hay datos reales del backend — quitar las conversaciones de ejemplo
+    // El backend respondió correctamente (haya o no conversaciones aún) — esta es una
+    // cuenta real, así que las conversaciones de ejemplo no deben mostrarse nunca.
     DEMO_CONVO_KEYS.forEach(k => { if (convos[k] && !convos[k].isReal) delete convos[k]; });
+
+    if (realConvos.length === 0) {
+      console.log('Sin conversaciones reales aún');
+      usingRealBackend = true;
+      renderInboxList();
+      return true;
+    }
 
     realConvos.forEach(rc => {
       const key = rc.waId;
