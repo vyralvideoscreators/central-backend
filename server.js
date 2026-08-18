@@ -636,17 +636,31 @@ wss.on('connection', (ws) => {
 // ══════════════════════════════════════════════════════════════
 // JWT MIDDLEWARE
 // ══════════════════════════════════════════════════════════════
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'No autenticado — incluye Authorization: Bearer <token>' });
   }
+  let decoded;
   try {
-    req.tenant = jwt.verify(auth.slice(7), JWT_SECRET);
-    next();
+    decoded = jwt.verify(auth.slice(7), JWT_SECRET);
   } catch {
-    res.status(401).json({ error: 'Token inválido o expirado' });
+    return res.status(401).json({ error: 'Token inválido o expirado' });
   }
+  // Revalidar en cada petición que la cuenta siga activa — para que una suspensión
+  // desde Central Admin bloquee el acceso al instante, no solo en el próximo login.
+  if (dbReady && decoded.tenantId) {
+    try {
+      const { rows } = await pool.query('SELECT active FROM tenants WHERE id = $1', [decoded.tenantId]);
+      if (!rows[0] || !rows[0].active) {
+        return res.status(403).json({ error: 'Tu cuenta ha sido suspendida. Contacta soporte.' });
+      }
+    } catch (err) {
+      return res.status(500).json({ error: 'Error validando la cuenta' });
+    }
+  }
+  req.tenant = decoded;
+  next();
 }
 
 async function getTenantCredentials(tenantId) {
@@ -1810,6 +1824,49 @@ app.put('/api/admin/tenants/:tenantId/status', requireAdmin, async (req, res) =>
   if (!dbReady) return res.status(503).json({ error: 'Base de datos no disponible' });
   try {
     await pool.query('UPDATE tenants SET active = $1 WHERE id = $2', [active, req.params.tenantId]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/admin/tenants/:tenantId', requireAdmin, async (req, res) => {
+  if (!dbReady) return res.status(503).json({ error: 'Base de datos no disponible' });
+  const allowed = ['business_name', 'full_name', 'email', 'country', 'whatsapp_number',
+    'whatsapp_phone_number_id', 'whatsapp_token', 'instagram_access_token', 'instagram_account_id'];
+  const sets = [];
+  const values = [];
+  let i = 1;
+  for (const [key, val] of Object.entries(req.body || {})) {
+    if (!allowed.includes(key)) continue;
+    sets.push(`${key} = $${i++}`);
+    values.push(val);
+  }
+  if (sets.length === 0) return res.status(400).json({ error: 'No hay campos válidos para actualizar' });
+  values.push(req.params.tenantId);
+  try {
+    const { rows } = await pool.query(
+      `UPDATE tenants SET ${sets.join(', ')} WHERE id = $${i} RETURNING id, business_name, full_name, email, country, whatsapp_number`,
+      values
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Tenant no encontrado' });
+    res.json({ success: true, tenant: rows[0] });
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Ese correo ya está en uso por otra cuenta' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/tenants/:tenantId/reset-password', requireAdmin, async (req, res) => {
+  const { newPassword } = req.body || {};
+  if (!newPassword || newPassword.length < 8) {
+    return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
+  }
+  if (!dbReady) return res.status(503).json({ error: 'Base de datos no disponible' });
+  try {
+    const hash = await bcrypt.hash(newPassword, 10);
+    const { rowCount } = await pool.query('UPDATE tenants SET password_hash = $1 WHERE id = $2', [hash, req.params.tenantId]);
+    if (rowCount === 0) return res.status(404).json({ error: 'Tenant no encontrado' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
